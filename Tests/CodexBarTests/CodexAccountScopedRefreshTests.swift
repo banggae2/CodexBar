@@ -149,6 +149,24 @@ struct CodexAccountScopedRefreshTests {
     }
 
     @Test
+    func `cancelled codex refresh does not surface cancellation as user error`() async {
+        let settings = self.makeSettingsStore(suite: "CodexAccountScopedRefreshTests-cancelled-refresh")
+        settings.refreshFrequency = .manual
+        settings._test_liveSystemCodexAccount = self.liveAccount(email: "alpha@example.com")
+
+        let store = self.makeUsageStore(settings: settings)
+        let existing = self.codexSnapshot(email: "alpha@example.com", usedPercent: 12)
+        store._setSnapshotForTesting(existing, provider: .codex)
+        self.installFailingCodexProvider(on: store, error: CancellationError())
+
+        await store.refreshProvider(.codex, allowDisabled: true)
+
+        #expect(store.snapshots[.codex]?.accountEmail(for: .codex) == "alpha@example.com")
+        #expect(store.errors[.codex] == nil)
+        #expect(store.userFacingError(for: .codex) == nil)
+    }
+
+    @Test
     func `credits fallback only reuses cache for the same codex account`() async {
         let settings = self.makeSettingsStore(suite: "CodexAccountScopedRefreshTests-credits")
         settings.refreshFrequency = .manual

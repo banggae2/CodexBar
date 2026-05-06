@@ -64,9 +64,9 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.minimaxCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies and local storage tokens.",
-                manual: "Paste a Cookie header or cURL capture from the Coding Plan page.",
-                off: "MiniMax cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies and local storage tokens."),
+                manual: L10n.string("Paste a Cookie header or cURL capture from the Coding Plan page."),
+                off: L10n.string("MiniMax cookies are disabled."))
         }
 
         let regionBinding = Binding(
@@ -75,14 +75,14 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
                 context.settings.minimaxAPIRegion = MiniMaxAPIRegion(rawValue: raw) ?? .global
             })
         let regionOptions = MiniMaxAPIRegion.allCases.map {
-            ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
+            ProviderSettingsPickerOption(id: $0.rawValue, title: L10n.optionLabel($0.displayName))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "minimax-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies and local storage tokens.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies and local storage tokens."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -91,12 +91,12 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .minimax) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
             ProviderSettingsPickerDescriptor(
                 id: "minimax-region",
-                title: "API region",
-                subtitle: "Choose the MiniMax host (global .io or China mainland .com).",
+                title: L10n.string("API region"),
+                subtitle: L10n.string("Choose the MiniMax host (global .io or China mainland .com)."),
                 binding: regionBinding,
                 options: regionOptions,
                 isVisible: nil,
@@ -114,15 +114,15 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
         return [
             ProviderSettingsFieldDescriptor(
                 id: "minimax-api-token",
-                title: "API token",
-                subtitle: "Stored in ~/.codexbar/config.json. Paste your MiniMax API key.",
+                title: L10n.string("API token"),
+                subtitle: L10n.string("Stored MiniMax API key notice"),
                 kind: .secure,
                 placeholder: "Paste API token…",
                 binding: context.stringBinding(\.minimaxAPIToken),
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "minimax-open-dashboard",
-                        title: "Open Coding Plan",
+                        title: L10n.string("Open Coding Plan"),
                         style: .link,
                         isVisible: nil,
                         perform: {
@@ -133,7 +133,7 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
                 onActivate: { context.settings.ensureMiniMaxAPITokenLoaded() }),
             ProviderSettingsFieldDescriptor(
                 id: "minimax-cookie",
-                title: "Cookie header",
+                title: L10n.string("Cookie header"),
                 subtitle: "",
                 kind: .secure,
                 placeholder: "Cookie: …",
@@ -141,7 +141,7 @@ struct MiniMaxProviderImplementation: ProviderImplementation {
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "minimax-open-dashboard-cookie",
-                        title: "Open Coding Plan",
+                        title: L10n.string("Open Coding Plan"),
                         style: .link,
                         isVisible: nil,
                         perform: {

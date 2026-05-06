@@ -17,24 +17,24 @@ struct CodexUIErrorMapper {
         }
 
         if self.looksExpired(lower: lower) {
-            return "Codex session expired. Sign in again."
+            return L10n.string("Codex session expired. Sign in again.")
         }
 
         if lower.contains("frame load interrupted") {
-            return "OpenAI web refresh was interrupted. Refresh OpenAI cookies and try again."
+            return L10n.string("OpenAI web refresh was interrupted. Refresh OpenAI cookies and try again.")
         }
 
         if self.looksOpenAIWebTimeout(lower: lower) {
-            return "OpenAI web refresh timed out. Refresh OpenAI cookies and try again."
+            return L10n.string("OpenAI web refresh timed out. Refresh OpenAI cookies and try again.")
         }
 
         if self.looksOpenAIWebNetworkError(lower: lower) {
-            return "OpenAI web refresh hit a network error. "
-                + "Check your connection, then refresh OpenAI cookies and try again."
+            return L10n.string("OpenAI web refresh hit a network error. ")
+                + L10n.string("Check your connection, then refresh OpenAI cookies and try again.")
         }
 
         if self.looksInternalTransport(lower: lower) {
-            return "Codex usage is temporarily unavailable. Try refreshing."
+            return L10n.string("Codex usage is temporarily unavailable. Try refreshing.")
         }
 
         return trimmed

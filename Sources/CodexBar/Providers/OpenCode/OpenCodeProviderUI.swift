@@ -7,6 +7,6 @@ enum OpenCodeProviderUI {
         guard cookieSource != .manual else { return nil }
         guard let entry = CookieHeaderCache.load(provider: provider) else { return nil }
         let when = entry.storedAt.relativeDescription()
-        return "Cached: \(entry.sourceLabel) • \(when)"
+        return L10n.string("Cached source time format", entry.sourceLabel, when)
     }
 }

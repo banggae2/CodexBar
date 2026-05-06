@@ -48,16 +48,16 @@ struct AbacusProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.abacusCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies.",
-                manual: "Paste a Cookie header or cURL capture from the Abacus AI dashboard.",
-                off: "Abacus AI cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies."),
+                manual: L10n.string("Paste a Cookie header or cURL capture from the Abacus AI dashboard."),
+                off: L10n.string("Abacus AI cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "abacus-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -66,7 +66,7 @@ struct AbacusProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .abacus) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
         ]
     }
@@ -84,7 +84,7 @@ struct AbacusProviderImplementation: ProviderImplementation {
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "abacus-open-dashboard",
-                        title: "Open Dashboard",
+                        title: L10n.string("Open Dashboard"),
                         style: .link,
                         isVisible: nil,
                         perform: {

@@ -4,8 +4,8 @@ extension TokenAccountSupportCatalog {
     static let supportByProvider: [UsageProvider: TokenAccountSupport] = [
         .claude: TokenAccountSupport(
             title: "Session tokens",
-            subtitle: "Store Claude sessionKey cookies or OAuth access tokens.",
-            placeholder: "Paste sessionKey or OAuth token…",
+            subtitle: "Store Claude sessionKey cookies.",
+            placeholder: "Paste sessionKey…",
             injection: .cookieHeader,
             requiresManualCookieSource: true,
             cookieName: "sessionKey"),

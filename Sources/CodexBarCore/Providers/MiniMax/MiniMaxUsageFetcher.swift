@@ -297,8 +297,12 @@ public struct MiniMaxUsageFetcher: Sendable {
     }
 
     static func url(from raw: String, path: String? = nil, query: String? = nil) -> URL? {
-        guard let cleaned = MiniMaxSettingsReader.cleaned(raw) else { return nil }
-
+        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
+            MiniMaxSettingsReader.cleaned(raw),
+            allowedHostSuffixes: ["minimax.io", "minimaxi.com"])
+        else {
+            return nil
+        }
         func compose(_ base: URL) -> URL? {
             var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
             if let path { components.path = "/" + path }
@@ -306,11 +310,6 @@ public struct MiniMaxUsageFetcher: Sendable {
             return components.url
         }
 
-        if let url = URL(string: cleaned), url.scheme != nil {
-            if let composed = compose(url) { return composed }
-            return url
-        }
-        guard let base = URL(string: "https://\(cleaned)") else { return nil }
         return compose(base)
     }
 

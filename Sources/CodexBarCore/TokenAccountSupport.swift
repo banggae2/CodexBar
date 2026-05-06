@@ -41,13 +41,6 @@ public enum TokenAccountSupportCatalog {
         case let .environment(key):
             return [key: token]
         case .cookieHeader:
-            if provider == .claude,
-               case let .oauth(accessToken) = ClaudeCredentialRouting.resolve(
-                   tokenAccountToken: token,
-                   manualCookieHeader: nil)
-            {
-                return [ClaudeOAuthCredentialsStore.environmentTokenKey: accessToken]
-            }
             return nil
         }
     }
@@ -60,7 +53,8 @@ public enum TokenAccountSupportCatalog {
     }
 
     public static func isClaudeOAuthToken(_ token: String) -> Bool {
-        ClaudeCredentialRouting.resolve(tokenAccountToken: token, manualCookieHeader: nil).isOAuth
+        _ = token
+        return false
     }
 
     public static func normalizedCookieHeader(_ token: String, support: TokenAccountSupport) -> String {

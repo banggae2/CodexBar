@@ -53,16 +53,16 @@ struct MistralProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.mistralCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies from admin.mistral.ai.",
-                manual: "Paste a Cookie header captured from the billing page.",
-                off: "Mistral cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies from admin.mistral.ai."),
+                manual: L10n.string("Paste a Cookie header captured from the billing page."),
+                off: L10n.string("Mistral cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "mistral-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies from admin.mistral.ai.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies from admin.mistral.ai."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -71,7 +71,7 @@ struct MistralProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .mistral) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
         ]
     }
@@ -81,16 +81,15 @@ struct MistralProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "mistral-cookie-header",
-                title: "Cookie header",
-                subtitle: "Paste the Cookie header from a request to admin.mistral.ai. "
-                    + "Must contain an ory_session_* cookie.",
+                title: L10n.string("Cookie header"),
+                subtitle: L10n.string("Paste Mistral cookie header notice"),
                 kind: .secure,
                 placeholder: "ory_session_…=…; csrftoken=…",
                 binding: context.stringBinding(\.mistralCookieHeader),
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "mistral-open-console",
-                        title: "Open Mistral Admin",
+                        title: L10n.string("Open Mistral Admin"),
                         style: .link,
                         isVisible: nil,
                         perform: {

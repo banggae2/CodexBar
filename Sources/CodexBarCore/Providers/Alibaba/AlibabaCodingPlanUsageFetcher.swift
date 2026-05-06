@@ -276,15 +276,12 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func url(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
-        guard let cleaned else { return nil }
-
-        let base: URL? = if let url = URL(string: cleaned), url.scheme != nil {
-            url
-        } else {
-            URL(string: "https://\(cleaned)")
+        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
+            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
+            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
+        else {
+            return nil
         }
-        guard let base else { return nil }
 
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.path = "/data/api.json"
@@ -300,15 +297,12 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func consoleURL(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
-        guard let cleaned else { return nil }
-
-        let base: URL? = if let url = URL(string: cleaned), url.scheme != nil {
-            url
-        } else {
-            URL(string: "https://\(cleaned)")
+        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
+            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
+            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
+        else {
+            return nil
         }
-        guard let base else { return nil }
 
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.path = "/data/api.json"
@@ -364,15 +358,12 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func dashboardURL(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
-        guard let cleaned else { return nil }
-
-        let base: URL? = if let url = URL(string: cleaned), url.scheme != nil {
-            url
-        } else {
-            URL(string: "https://\(cleaned)")
+        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
+            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
+            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
+        else {
+            return nil
         }
-        guard let base else { return nil }
 
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
               let dashboardComponents = URLComponents(
@@ -427,15 +418,12 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     private static func baseURL(from rawHost: String) -> URL? {
-        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
-        guard let cleaned else { return nil }
-
-        let base: URL? = if let url = URL(string: cleaned), url.scheme != nil {
-            url
-        } else {
-            URL(string: "https://\(cleaned)")
+        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
+            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
+            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
+        else {
+            return nil
         }
-        guard let base else { return nil }
 
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             return nil

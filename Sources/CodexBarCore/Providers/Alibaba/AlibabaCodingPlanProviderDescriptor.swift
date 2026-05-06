@@ -65,7 +65,7 @@ public enum AlibabaCodingPlanProviderDescriptor {
             return [AlibabaCodingPlanWebFetchStrategy()]
         case .api:
             return [AlibabaCodingPlanAPIFetchStrategy()]
-        case .cli, .oauth:
+        case .cli, .log, .oauth:
             return []
         case .auto:
             break

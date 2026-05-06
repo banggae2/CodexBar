@@ -33,7 +33,7 @@ public enum ClaudeProviderDescriptor {
                 supportsTokenCost: true,
                 noDataMessage: self.noDataMessage),
             fetchPlan: ProviderFetchPlan(
-                sourceModes: [.auto, .web, .cli, .oauth],
+                sourceModes: [.auto, .cli, .log],
                 pipeline: ProviderFetchPipeline(resolveStrategies: self.resolveStrategies)),
             cli: ProviderCLIConfig(
                 name: "claude",
@@ -47,19 +47,20 @@ public enum ClaudeProviderDescriptor {
 
         let planningInput = await Self.makePlanningInput(context: context)
         let plan = ClaudeSourcePlanner.resolve(input: planningInput)
-        let manualCookieHeader = Self.manualCookieHeader(from: context)
 
         return plan.orderedSteps.map { step in
             let strategy: any ProviderFetchStrategy = switch step.dataSource {
-            case .oauth:
-                ClaudeOAuthFetchStrategy()
-            case .web:
-                ClaudeWebFetchStrategy(browserDetection: context.browserDetection)
             case .cli:
                 ClaudeCLIFetchStrategy(
-                    useWebExtras: context.runtime == .app
-                        && planningInput.webExtrasEnabled,
-                    manualCookieHeader: manualCookieHeader,
+                    useWebExtras: false,
+                    manualCookieHeader: nil,
+                    browserDetection: context.browserDetection)
+            case .log:
+                ClaudeLocalLogFetchStrategy()
+            case .oauth, .web:
+                ClaudeCLIFetchStrategy(
+                    useWebExtras: false,
+                    manualCookieHeader: nil,
                     browserDetection: context.browserDetection)
             case .auto:
                 fatalError("Planner must not emit .auto as an executable step.")
@@ -74,22 +75,13 @@ public enum ClaudeProviderDescriptor {
             runtime: context.runtime,
             selectedDataSource: Self.sourceDataSource(from: context.sourceMode),
             webExtrasEnabled: webExtrasEnabled,
-            hasWebSession: ClaudeWebFetchStrategy.isAvailableForFallback(
-                context: context,
-                browserDetection: context.browserDetection),
+            hasWebSession: false,
             hasCLI: ClaudeCLIResolver.isAvailable(environment: context.env),
-            hasOAuthCredentials: ClaudeOAuthPlanningAvailability.isAvailable(
-                runtime: context.runtime,
-                sourceMode: context.sourceMode,
-                environment: context.env))
+            hasLocalLogs: true,
+            hasOAuthCredentials: false)
     }
 
-    private static func manualCookieHeader(from context: ProviderFetchContext) -> String? {
-        guard context.settings?.claude?.cookieSource == .manual else { return nil }
-        return CookieHeaderNormalizer.normalize(context.settings?.claude?.manualCookieHeader)
-    }
-
-    private static func noDataMessage() -> String {
+    fileprivate static func noDataMessage() -> String {
         "No Claude usage logs found in ~/.config/claude/projects or ~/.claude/projects."
     }
 
@@ -106,6 +98,7 @@ public enum ClaudeProviderDescriptor {
             webExtrasEnabled: webExtrasEnabled,
             hasWebSession: hasWebSession,
             hasCLI: hasCLI,
+            hasLocalLogs: true,
             hasOAuthCredentials: hasOAuthCredentials))
         return plan.compatibilityStrategy ?? ClaudeUsageStrategy(dataSource: selectedDataSource, useWebExtras: false)
     }
@@ -115,11 +108,13 @@ public enum ClaudeProviderDescriptor {
         case .auto, .api:
             .auto
         case .web:
-            .web
+            .auto
         case .cli:
             .cli
+        case .log:
+            .log
         case .oauth:
-            .oauth
+            .auto
         }
     }
 }
@@ -383,10 +378,41 @@ struct ClaudeCLIFetchStrategy: ProviderFetchStrategy {
     }
 
     func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
-        guard context.runtime == .app, context.sourceMode == .auto else { return false }
-        // Only fall through when web is actually available; otherwise preserve actionable CLI errors.
-        return ClaudeWebFetchStrategy.isAvailableForFallback(
-            context: context,
-            browserDetection: self.browserDetection)
+        _ = context
+        return false
+    }
+}
+
+struct ClaudeLocalLogFetchStrategy: ProviderFetchStrategy {
+    let id: String = "claude.log"
+    let kind: ProviderFetchKind = .localProbe
+
+    func isAvailable(_: ProviderFetchContext) async -> Bool {
+        true
+    }
+
+    func fetch(_: ProviderFetchContext) async throws -> ProviderFetchResult {
+        let tokenSnapshot = try await CostUsageFetcher().loadTokenSnapshot(
+            provider: .claude,
+            forceRefresh: true)
+        guard !tokenSnapshot.daily.isEmpty else {
+            throw ClaudeUsageError.parseFailed(ClaudeProviderDescriptor.noDataMessage())
+        }
+
+        let identity = ProviderIdentitySnapshot(
+            providerID: .claude,
+            accountEmail: nil,
+            accountOrganization: nil,
+            loginMethod: "Local logs")
+        let usage = UsageSnapshot(
+            primary: nil,
+            secondary: nil,
+            updatedAt: tokenSnapshot.updatedAt,
+            identity: identity)
+        return self.makeResult(usage: usage, sourceLabel: "log")
+    }
+
+    func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
+        context.sourceMode == .auto
     }
 }

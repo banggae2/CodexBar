@@ -58,11 +58,9 @@ public struct MiniMaxSettingsReader: Sendable {
     }
 
     private static func url(from raw: String?) -> URL? {
-        guard let cleaned = self.cleaned(raw) else { return nil }
-        if let url = URL(string: cleaned), url.scheme != nil {
-            return url
-        }
-        return URL(string: "https://\(cleaned)")
+        ProviderEndpointSafety.trustedHTTPSURL(
+            self.cleaned(raw),
+            allowedHostSuffixes: ["minimax.io", "minimaxi.com"])
     }
 }
 

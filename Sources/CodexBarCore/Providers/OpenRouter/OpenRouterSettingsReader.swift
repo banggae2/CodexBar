@@ -12,8 +12,9 @@ public enum OpenRouterSettingsReader {
 
     /// Returns the API URL, defaulting to production endpoint
     public static func apiURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let override = environment["OPENROUTER_API_URL"],
-           let url = URL(string: cleaned(override) ?? "")
+        if let url = ProviderEndpointSafety.trustedHTTPSURL(
+            self.cleaned(environment["OPENROUTER_API_URL"]),
+            allowedHostSuffixes: ["openrouter.ai"])
         {
             return url
         }

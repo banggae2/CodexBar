@@ -13,14 +13,10 @@ struct ClaudeSourcePlannerTests {
             hasCLI: true,
             hasOAuthCredentials: true))
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.oauth, .cli, .web])
-        #expect(plan.orderedSteps.map(\.inclusionReason) == [
-            .appAutoPreferredOAuth,
-            .appAutoFallbackCLI,
-            .appAutoFallbackWeb,
-        ])
-        #expect(plan.availableSteps.map(\.dataSource) == [.oauth, .cli, .web])
-        #expect(plan.preferredStep?.dataSource == .oauth)
+        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .log])
+        #expect(plan.orderedSteps.map(\.inclusionReason) == [.appAutoPreferredCLI, .autoFallbackLocalLog])
+        #expect(plan.availableSteps.map(\.dataSource) == [.cli, .log])
+        #expect(plan.preferredStep?.dataSource == .cli)
     }
 
     @Test
@@ -33,12 +29,9 @@ struct ClaudeSourcePlannerTests {
             hasCLI: true,
             hasOAuthCredentials: false))
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.web, .cli])
-        #expect(plan.orderedSteps.map(\.inclusionReason) == [
-            .cliAutoPreferredWeb,
-            .cliAutoFallbackCLI,
-        ])
-        #expect(plan.preferredStep?.dataSource == .web)
+        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .log])
+        #expect(plan.orderedSteps.map(\.inclusionReason) == [.cliAutoPreferredCLI, .autoFallbackLocalLog])
+        #expect(plan.preferredStep?.dataSource == .cli)
     }
 
     @Test
@@ -58,6 +51,22 @@ struct ClaudeSourcePlannerTests {
     }
 
     @Test
+    func `explicit local log mode plan is single step`() {
+        let plan = ClaudeSourcePlanner.resolve(input: ClaudeSourcePlanningInput(
+            runtime: .app,
+            selectedDataSource: .log,
+            webExtrasEnabled: true,
+            hasWebSession: false,
+            hasCLI: true,
+            hasOAuthCredentials: false))
+
+        #expect(plan.orderedSteps.count == 1)
+        #expect(plan.orderedSteps.first?.dataSource == .log)
+        #expect(plan.orderedSteps.first?.inclusionReason == .explicitSourceSelection)
+        #expect(plan.compatibilityStrategy == ClaudeUsageStrategy(dataSource: .log, useWebExtras: false))
+    }
+
+    @Test
     func `app auto CLI fallback reports web extras like runtime`() {
         let plan = ClaudeSourcePlanner.resolve(input: ClaudeSourcePlanningInput(
             runtime: .app,
@@ -72,7 +81,7 @@ struct ClaudeSourcePlannerTests {
     }
 
     @Test
-    func `no source planner output is deterministic`() {
+    func `auto falls back to local logs when CLI is unavailable`() {
         let input = ClaudeSourcePlanningInput(
             runtime: .app,
             selectedDataSource: .auto,
@@ -82,18 +91,17 @@ struct ClaudeSourcePlannerTests {
             hasOAuthCredentials: false)
         let plan = ClaudeSourcePlanner.resolve(input: input)
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.oauth, .cli, .web])
-        #expect(plan.availableSteps.isEmpty)
-        #expect(plan.isNoSourceAvailable)
-        #expect(plan.preferredStep == nil)
-        #expect(plan.executionSteps.isEmpty)
+        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .log])
+        #expect(plan.availableSteps.map(\.dataSource) == [.log])
+        #expect(!plan.isNoSourceAvailable)
+        #expect(plan.preferredStep?.dataSource == .log)
+        #expect(plan.executionSteps.map(\.dataSource) == [.log])
         #expect(plan.debugLines() == [
-            "planner_order=oauth→cli→web",
-            "planner_selected=none",
-            "planner_no_source=true",
-            "planner_step.oauth=unavailable reason=app-auto-preferred-oauth",
-            "planner_step.cli=unavailable reason=app-auto-fallback-cli",
-            "planner_step.web=unavailable reason=app-auto-fallback-web",
+            "planner_order=cli→log",
+            "planner_selected=log",
+            "planner_no_source=false",
+            "planner_step.cli=unavailable reason=app-auto-preferred-cli",
+            "planner_step.log=available reason=auto-fallback-local-log",
         ])
     }
 

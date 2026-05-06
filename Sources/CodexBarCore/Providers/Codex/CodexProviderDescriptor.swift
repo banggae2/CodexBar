@@ -54,7 +54,7 @@ public enum CodexProviderDescriptor {
                 return [web]
             case .cli:
                 return [cli]
-            case .api:
+            case .log, .api:
                 return []
             case .auto:
                 return [web, cli]
@@ -67,7 +67,7 @@ public enum CodexProviderDescriptor {
                 return [cli]
             case .web:
                 return [web]
-            case .api:
+            case .log, .api:
                 return []
             case .auto:
                 return [oauth, cli]

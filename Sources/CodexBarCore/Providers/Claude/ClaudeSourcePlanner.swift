@@ -6,6 +6,7 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
     public let webExtrasEnabled: Bool
     public let hasWebSession: Bool
     public let hasCLI: Bool
+    public let hasLocalLogs: Bool
     public let hasOAuthCredentials: Bool
 
     public init(
@@ -14,6 +15,7 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         webExtrasEnabled: Bool,
         hasWebSession: Bool,
         hasCLI: Bool,
+        hasLocalLogs: Bool = true,
         hasOAuthCredentials: Bool)
     {
         self.runtime = runtime
@@ -21,17 +23,16 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         self.webExtrasEnabled = webExtrasEnabled
         self.hasWebSession = hasWebSession
         self.hasCLI = hasCLI
+        self.hasLocalLogs = hasLocalLogs
         self.hasOAuthCredentials = hasOAuthCredentials
     }
 }
 
 public enum ClaudeSourcePlanReason: String, Equatable, Sendable {
     case explicitSourceSelection = "explicit-source-selection"
-    case appAutoPreferredOAuth = "app-auto-preferred-oauth"
-    case appAutoFallbackCLI = "app-auto-fallback-cli"
-    case appAutoFallbackWeb = "app-auto-fallback-web"
-    case cliAutoPreferredWeb = "cli-auto-preferred-web"
-    case cliAutoFallbackCLI = "cli-auto-fallback-cli"
+    case appAutoPreferredCLI = "app-auto-preferred-cli"
+    case cliAutoPreferredCLI = "cli-auto-preferred-cli"
+    case autoFallbackLocalLog = "auto-fallback-local-log"
 }
 
 public struct ClaudeFetchPlanStep: Equatable, Sendable {
@@ -69,18 +70,18 @@ public struct ClaudeFetchPlan: Equatable, Sendable {
 
     public var preferredStep: ClaudeFetchPlanStep? {
         switch self.input.selectedDataSource {
-        case .auto:
+        case .auto, .oauth, .web:
             self.availableSteps.first
-        case .oauth, .web, .cli:
+        case .cli, .log:
             self.orderedSteps.first
         }
     }
 
     public var executionSteps: [ClaudeFetchPlanStep] {
         switch self.input.selectedDataSource {
-        case .auto:
+        case .auto, .oauth, .web:
             self.availableSteps
-        case .oauth, .web, .cli:
+        case .cli, .log:
             self.orderedSteps
         }
     }
@@ -170,26 +171,21 @@ public enum ClaudeSourcePlanner {
 
     private static func makeSteps(input: ClaudeSourcePlanningInput) -> [ClaudeFetchPlanStep] {
         switch input.selectedDataSource {
-        case .auto:
+        case .auto, .oauth, .web:
             switch input.runtime {
             case .app:
                 [
-                    self.step(.oauth, reason: .appAutoPreferredOAuth, input: input),
-                    self.step(.cli, reason: .appAutoFallbackCLI, input: input),
-                    self.step(.web, reason: .appAutoFallbackWeb, input: input),
+                    self.step(.cli, reason: .appAutoPreferredCLI, input: input),
+                    self.step(.log, reason: .autoFallbackLocalLog, input: input),
                 ]
             case .cli:
                 [
-                    self.step(.web, reason: .cliAutoPreferredWeb, input: input),
-                    self.step(.cli, reason: .cliAutoFallbackCLI, input: input),
+                    self.step(.cli, reason: .cliAutoPreferredCLI, input: input),
+                    self.step(.log, reason: .autoFallbackLocalLog, input: input),
                 ]
             }
-        case .oauth:
-            [self.step(.oauth, reason: .explicitSourceSelection, input: input)]
-        case .web:
-            [self.step(.web, reason: .explicitSourceSelection, input: input)]
-        case .cli:
-            [self.step(.cli, reason: .explicitSourceSelection, input: input)]
+        case .cli, .log:
+            [self.step(input.selectedDataSource, reason: .explicitSourceSelection, input: input)]
         }
     }
 
@@ -211,12 +207,12 @@ public enum ClaudeSourcePlanner {
         switch dataSource {
         case .auto:
             false
-        case .oauth:
-            input.hasOAuthCredentials
-        case .web:
-            input.hasWebSession
         case .cli:
             input.hasCLI
+        case .log:
+            input.hasLocalLogs
+        case .oauth, .web:
+            false
         }
     }
 }

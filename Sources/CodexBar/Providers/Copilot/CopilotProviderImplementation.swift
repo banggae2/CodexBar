@@ -27,7 +27,7 @@ struct CopilotProviderImplementation: ProviderImplementation {
     func loginMenuAction(context _: ProviderMenuLoginContext)
         -> (label: String, action: MenuDescriptor.MenuAction)?
     {
-        ("Add Account...", .addProviderAccount(.copilot))
+        (L10n.string("menu.addAccount"), .addProviderAccount(.copilot))
     }
 
     @MainActor
@@ -35,15 +35,15 @@ struct CopilotProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "copilot-add-account",
-                title: "GitHub Login",
-                subtitle: "Add accounts via GitHub OAuth Device Flow.",
+                title: L10n.string("GitHub Login"),
+                subtitle: L10n.string("Add accounts via GitHub OAuth Device Flow."),
                 kind: .plain,
                 placeholder: nil,
                 binding: .constant(""),
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "copilot-add-account-action",
-                        title: "Add Account",
+                        title: L10n.string("Add Account"),
                         style: .bordered,
                         isVisible: { true },
                         perform: {
