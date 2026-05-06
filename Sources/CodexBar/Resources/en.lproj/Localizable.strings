@@ -326,6 +326,9 @@
 "Clear cached cost scan results." = "Clear cached cost scan results.";
 "Clear cached cost scan results or browser cookie caches." = "Clear cached cost scan results or browser cookie caches.";
 "Clear cost cache" = "Clear cost cache";
+"Clear cookie cache" = "Clear cookie cache";
+"Cleared cookie cache providers format" = "Cleared cookie cache for %d provider(s).";
+"No cached cookies found." = "No cached cookies found.";
 "Notifications" = "Notifications";
 "Trigger test notifications for the 5-hour session window (depleted/restored)." = "Trigger test notifications for the 5-hour session window (depleted/restored).";
 "Post depleted" = "Post depleted";
@@ -597,6 +600,8 @@
 "Auto-detect" = "Auto-detect";
 "JetBrains IDE" = "JetBrains IDE";
 "Custom Path" = "Custom Path";
+"Enterprise host" = "Enterprise host";
+"Copilot enterprise host subtitle" = "Optional. Enter your GitHub Enterprise host, for example octocorp.ghe.com. Leave blank for github.com.";
 "GitHub Login" = "GitHub Login";
 "Add Account" = "Add Account";
 "Use BigModel for the China mainland endpoints (open.bigmodel.cn)." = "Use BigModel for the China mainland endpoints (open.bigmodel.cn).";

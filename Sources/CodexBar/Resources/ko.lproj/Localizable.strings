@@ -326,6 +326,9 @@
 "Clear cached cost scan results." = "캐시된 비용 스캔 결과를 지웁니다.";
 "Clear cached cost scan results or browser cookie caches." = "캐시된 비용 스캔 결과 또는 브라우저 쿠키 캐시를 지웁니다.";
 "Clear cost cache" = "비용 캐시 지우기";
+"Clear cookie cache" = "쿠키 캐시 지우기";
+"Cleared cookie cache providers format" = "%d개 공급자의 쿠키 캐시를 지웠습니다.";
+"No cached cookies found." = "캐시된 쿠키가 없습니다.";
 "Notifications" = "알림";
 "Trigger test notifications for the 5-hour session window (depleted/restored)." = "5시간 세션 창의 테스트 알림(소진/복구)을 보냅니다.";
 "Post depleted" = "소진 알림 보내기";
@@ -597,6 +600,8 @@
 "Auto-detect" = "자동 감지";
 "JetBrains IDE" = "JetBrains IDE";
 "Custom Path" = "사용자 지정 경로";
+"Enterprise host" = "엔터프라이즈 호스트";
+"Copilot enterprise host subtitle" = "선택 사항입니다. GitHub Enterprise 호스트를 입력하세요. 예: octocorp.ghe.com. 비워 두면 github.com을 사용합니다.";
 "GitHub Login" = "GitHub 로그인";
 "Add Account" = "계정 추가";
 "Use BigModel for the China mainland endpoints (open.bigmodel.cn)." = "중국 본토 엔드포인트(open.bigmodel.cn)에는 BigModel을 사용합니다.";

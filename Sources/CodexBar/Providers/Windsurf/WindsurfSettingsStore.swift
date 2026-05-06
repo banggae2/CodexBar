@@ -58,7 +58,7 @@ extension SettingsStore {
             return .auto
         case .web:
             return .web
-        case .cli:
+        case .cli, .log:
             return .cli
         }
     }

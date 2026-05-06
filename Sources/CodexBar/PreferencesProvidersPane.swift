@@ -462,7 +462,9 @@ struct ProvidersPane: View {
             ]
         } else if provider == .deepseek {
             options = [
-                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+                ProviderSettingsPickerOption(
+                    id: MenuBarMetricPreference.automatic.rawValue,
+                    title: L10n.string("Automatic")),
             ]
         } else if provider == .abacus {
             let metadata = self.store.metadata(for: provider)

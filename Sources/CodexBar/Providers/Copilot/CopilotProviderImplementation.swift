@@ -36,8 +36,8 @@ struct CopilotProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "copilot-enterprise-host",
-                title: "Enterprise host",
-                subtitle: "Optional. Enter your GitHub Enterprise host, for example octocorp.ghe.com. Leave blank for github.com.",
+                title: L10n.string("Enterprise host"),
+                subtitle: L10n.string("Copilot enterprise host subtitle"),
                 kind: .plain,
                 placeholder: "github.com",
                 binding: context.stringBinding(\.copilotEnterpriseHost),

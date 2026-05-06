@@ -248,7 +248,7 @@ struct DebugPane: View {
                         Button {
                             self.clearCookieCache()
                         } label: {
-                            Label("Clear cookie cache", systemImage: "trash")
+                            Label(L10n.string("Clear cookie cache"), systemImage: "trash")
                         }
 
                         if let status = self.cookieCacheStatus {
@@ -531,9 +531,9 @@ struct DebugPane: View {
     private func clearCookieCache() {
         let cleared = CookieHeaderCache.clearAll()
         if cleared > 0 {
-            self.cookieCacheStatus = "Cleared \(cleared) provider\(cleared == 1 ? "" : "s")."
+            self.cookieCacheStatus = L10n.string("Cleared cookie cache providers format", cleared)
         } else {
-            self.cookieCacheStatus = "No cached cookies found."
+            self.cookieCacheStatus = L10n.string("No cached cookies found.")
         }
     }
 
