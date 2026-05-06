@@ -324,6 +324,7 @@
 "No log yet. Update OpenAI cookies in Providers → Codex to run an import." = "No log yet. Update OpenAI cookies in Providers → Codex to run an import.";
 "Caches" = "Caches";
 "Clear cached cost scan results." = "Clear cached cost scan results.";
+"Clear cached cost scan results or browser cookie caches." = "Clear cached cost scan results or browser cookie caches.";
 "Clear cost cache" = "Clear cost cache";
 "Notifications" = "Notifications";
 "Trigger test notifications for the 5-hour session window (depleted/restored)." = "Trigger test notifications for the 5-hour session window (depleted/restored).";
@@ -364,6 +365,7 @@
 "Extra usage" = "Extra usage";
 "Menu bar metric" = "Menu bar metric";
 "Choose which window drives the menu bar percent." = "Choose which window drives the menu bar percent.";
+"Shows the DeepSeek balance in the menu bar." = "Shows the DeepSeek balance in the menu bar.";
 "Managed Codex login already running notice" = "A managed Codex login is already running. Wait for it to finish before adding or re-authenticating another account.";
 "Managed Codex login did not complete notice" = "Managed Codex login did not complete. Try again after finishing the browser login flow.";
 "Codex login missing email notice" = "Codex login completed, but no account email was available. Try again after confirming the account is fully signed in.";
@@ -606,6 +608,7 @@
 "Stored OpenRouter API key notice" = "Stored in ~/.codexbar/config.json. Get your key from openrouter.ai/settings/keys and set a key spending limit there to enable API key quota tracking.";
 "Stored Kilo API key notice" = "Stored in ~/.codexbar/config.json. You can also provide KILO_API_KEY or ~/.local/share/kilo/auth.json (kilo.access).";
 "Add accounts via GitHub OAuth Device Flow." = "Add accounts via GitHub OAuth Device Flow.";
+"Add accounts via GitHub OAuth Device Flow on the selected host." = "Add accounts via GitHub OAuth Device Flow on the selected host.";
 "Antigravity login is managed in the app" = "Antigravity login is managed in the app";
 "Open Antigravity to sign in, then refresh CodexBar." = "Open Antigravity to sign in, then refresh CodexBar.";
 "Vertex AI Login" = "Vertex AI Login";

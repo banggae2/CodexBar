@@ -37,6 +37,7 @@ extension SettingsStore {
         _ = self.showOptionalCreditsAndExtraUsage
         _ = self.openAIWebAccessEnabled
         _ = self.openAIWebBatterySaverEnabled
+        _ = self.providerStorageFootprintsEnabled
         _ = self.codexUsageDataSource
         _ = self.codexActiveSource
         _ = self.claudeUsageDataSource

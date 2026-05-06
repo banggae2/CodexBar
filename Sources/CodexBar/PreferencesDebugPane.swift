@@ -13,6 +13,7 @@ struct DebugPane: View {
     @State private var logText: String = ""
     @State private var isClearingCostCache = false
     @State private var costCacheStatus: String?
+    @State private var cookieCacheStatus: String?
     #if DEBUG
     @State private var currentErrorProvider: UsageProvider = .codex
     @State private var simulatedErrorText: String = """
@@ -223,7 +224,7 @@ struct DebugPane: View {
 
                 SettingsSection(
                     title: L10n.string("Caches"),
-                    caption: L10n.string("Clear cached cost scan results."))
+                    caption: L10n.string("Clear cached cost scan results or browser cookie caches."))
                 {
                     let isTokenRefreshActive = self.store.isTokenRefreshInFlight(for: .codex)
                         || self.store.isTokenRefreshInFlight(for: .claude)
@@ -237,6 +238,20 @@ struct DebugPane: View {
                         .disabled(self.isClearingCostCache || isTokenRefreshActive)
 
                         if let status = self.costCacheStatus {
+                            Text(status)
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            self.clearCookieCache()
+                        } label: {
+                            Label("Clear cookie cache", systemImage: "trash")
+                        }
+
+                        if let status = self.cookieCacheStatus {
                             Text(status)
                                 .font(.footnote)
                                 .foregroundStyle(.tertiary)
@@ -511,6 +526,15 @@ struct DebugPane: View {
         }
 
         self.costCacheStatus = L10n.string("Cleared.")
+    }
+
+    private func clearCookieCache() {
+        let cleared = CookieHeaderCache.clearAll()
+        if cleared > 0 {
+            self.cookieCacheStatus = "Cleared \(cleared) provider\(cleared == 1 ? "" : "s")."
+        } else {
+            self.cookieCacheStatus = "No cached cookies found."
+        }
     }
 
     private func fetchAttemptsText(for provider: UsageProvider) -> String {

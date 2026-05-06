@@ -460,6 +460,10 @@ struct ProvidersPane: View {
                     id: MenuBarMetricPreference.primary.rawValue,
                     title: L10n.string("Primary API key limit")),
             ]
+        } else if provider == .deepseek {
+            options = [
+                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+            ]
         } else if provider == .abacus {
             let metadata = self.store.metadata(for: provider)
             options = [
@@ -511,7 +515,9 @@ struct ProvidersPane: View {
         return ProviderSettingsPickerDescriptor(
             id: "menuBarMetric",
             title: L10n.string("Menu bar metric"),
-            subtitle: L10n.string("Choose which window drives the menu bar percent."),
+            subtitle: provider == .deepseek
+                ? L10n.string("Shows the DeepSeek balance in the menu bar.")
+                : L10n.string("Choose which window drives the menu bar percent."),
             binding: Binding(
                 get: {
                     self.settings

@@ -39,6 +39,7 @@ struct SettingsDefaultsState {
     var showOptionalCreditsAndExtraUsage: Bool
     var openAIWebAccessEnabled: Bool
     var openAIWebBatterySaverEnabled: Bool
+    var providerStorageFootprintsEnabled: Bool
     var jetbrainsIDEBasePath: String
     var mergeIcons: Bool
     var switcherShowsIcons: Bool

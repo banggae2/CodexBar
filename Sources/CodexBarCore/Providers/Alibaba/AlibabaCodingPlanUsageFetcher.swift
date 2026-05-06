@@ -468,9 +468,7 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
             let normalizedCode = codeText.lowercased()
             if normalizedCode.contains("needlogin") || normalizedCode.contains("login") {
                 if authMode == .apiKey {
-                    throw AlibabaCodingPlanUsageError.apiError(
-                        "This Alibaba endpoint requires a console session for this account/region. " +
-                            "API key mode may be unavailable in CN on this endpoint.")
+                    throw AlibabaCodingPlanUsageError.apiKeyUnavailableInRegion
                 }
                 throw AlibabaCodingPlanUsageError.loginRequired
             }
@@ -479,11 +477,15 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
             let normalizedMessage = messageText.lowercased()
             if normalizedMessage.contains("log in") || normalizedMessage.contains("login") {
                 if authMode == .apiKey {
-                    throw AlibabaCodingPlanUsageError.apiError(
-                        "This Alibaba endpoint requires a console session for this account/region. " +
-                            "API key mode may be unavailable in CN on this endpoint.")
+                    throw AlibabaCodingPlanUsageError.apiKeyUnavailableInRegion
                 }
                 throw AlibabaCodingPlanUsageError.loginRequired
+            }
+            if authMode == .apiKey,
+               normalizedMessage.contains("console session") ||
+               normalizedMessage.contains("api key mode may be unavailable")
+            {
+                throw AlibabaCodingPlanUsageError.apiKeyUnavailableInRegion
             }
         }
 
@@ -1067,6 +1069,7 @@ public enum AlibabaCodingPlanUsageError: LocalizedError, Sendable, Equatable {
     case networkError(String)
     case apiError(String)
     case parseFailed(String)
+    case apiKeyUnavailableInRegion
 
     var shouldRetryOnAlternateRegion: Bool {
         switch self {
@@ -1074,6 +1077,8 @@ public enum AlibabaCodingPlanUsageError: LocalizedError, Sendable, Equatable {
             true
         case .invalidCredentials:
             true
+        case .apiKeyUnavailableInRegion:
+            false
         case let .apiError(message):
             message.contains("HTTP 404") || message.contains("HTTP 403")
         case let .parseFailed(message):
@@ -1087,9 +1092,13 @@ public enum AlibabaCodingPlanUsageError: LocalizedError, Sendable, Equatable {
         switch self {
         case .loginRequired:
             "Alibaba Coding Plan console login is required. " +
-                "Sign in to Model Studio in a supported browser or paste a Cookie header."
+                "Sign in to Model Studio/Bailian in a supported browser or paste a Cookie header."
         case .invalidCredentials:
             "Alibaba Coding Plan API credentials are invalid or expired."
+        case .apiKeyUnavailableInRegion:
+            "Alibaba Coding Plan API key mode is not available for this account/region. " +
+                "Use cookie authentication in Settings -> Providers -> Alibaba, or switch regions " +
+                "if your account supports API key mode elsewhere."
         case let .networkError(message):
             "Alibaba Coding Plan network error: \(message)"
         case let .apiError(message):
