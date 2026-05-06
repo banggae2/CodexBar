@@ -49,13 +49,13 @@ struct KiloProviderImplementation: ProviderImplementation {
                 context.settings.kiloUsageDataSource = KiloUsageDataSource(rawValue: raw) ?? .auto
             })
         let usageOptions = KiloUsageDataSource.allCases.map {
-            ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
+            ProviderSettingsPickerOption(id: $0.rawValue, title: L10n.optionLabel($0.displayName))
         }
         return [
             ProviderSettingsPickerDescriptor(
                 id: "kilo-usage-source",
-                title: "Usage source",
-                subtitle: "Auto uses API first, then falls back to CLI on auth failures.",
+                title: L10n.string("Usage source"),
+                subtitle: L10n.string("Auto uses API first, then falls back to CLI on auth failures."),
                 binding: usageBinding,
                 options: usageOptions,
                 isVisible: nil,
@@ -73,9 +73,8 @@ struct KiloProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "kilo-api-key",
-                title: "API key",
-                subtitle: "Stored in ~/.codexbar/config.json. You can also provide KILO_API_KEY or "
-                    + "~/.local/share/kilo/auth.json (kilo.access).",
+                title: L10n.string("API key"),
+                subtitle: L10n.string("Stored Kilo API key notice"),
                 kind: .secure,
                 placeholder: "kilo_...",
                 binding: context.stringBinding(\.kiloAPIToken),

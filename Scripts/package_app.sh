@@ -264,6 +264,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleName</key><string>CodexBar</string>
     <key>CFBundleDisplayName</key><string>CodexBar</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ko</string>
+    </array>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleExecutable</key><string>CodexBar</string>
     <key>CFBundlePackageType</key><string>APPL</string>
@@ -368,6 +374,12 @@ if [[ -n "$(resolve_binary_path "CodexBarWidget" "${ARCH_LIST[0]}")" ]]; then
 <dict>
     <key>CFBundleName</key><string>CodexBarWidget</string>
     <key>CFBundleDisplayName</key><string>CodexBar</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ko</string>
+    </array>
     <key>CFBundleIdentifier</key><string>${WIDGET_BUNDLE_ID}</string>
     <key>CFBundleExecutable</key><string>CodexBarWidget</string>
     <key>CFBundlePackageType</key><string>XPC!</string>

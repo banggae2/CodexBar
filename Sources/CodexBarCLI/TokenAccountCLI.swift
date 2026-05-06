@@ -83,15 +83,11 @@ struct TokenAccountCLIContext {
             return self.makeSnapshot(codex: self.makeCodexSettingsSnapshot(account: account))
         case .claude:
             let routing = self.claudeCredentialRouting(account: account, config: config)
-            let claudeSource: ClaudeUsageDataSource = routing.isOAuth ? .oauth : .auto
-            let cookieSource = routing.isOAuth
-                ? ProviderCookieSource.off
-                : self.cookieSource(provider: provider, account: account, config: config)
             return self.makeSnapshot(
                 claude: ProviderSettingsSnapshot.ClaudeProviderSettings(
-                    usageDataSource: claudeSource,
+                    usageDataSource: .auto,
                     webExtrasEnabled: false,
-                    cookieSource: cookieSource,
+                    cookieSource: self.cookieSource(provider: provider, account: account, config: config),
                     manualCookieHeader: routing.manualCookieHeader))
         case .cursor:
             let cookieHeader = self.manualCookieHeader(provider: provider, account: account, config: config)
@@ -394,7 +390,7 @@ struct TokenAccountCLIContext {
     private static func kiloUsageDataSource(from source: ProviderSourceMode?) -> KiloUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto, .web, .oauth:
+        case .auto, .web, .log, .oauth:
             return .auto
         case .api:
             return .api

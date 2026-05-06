@@ -2,6 +2,28 @@ import CodexBarCore
 import Foundation
 
 extension SettingsStore {
+    struct ProviderDetectionEnablement: Equatable, Sendable {
+        let codex: Bool
+        let claude: Bool
+        let gemini: Bool
+        let antigravity: Bool
+    }
+
+    static func providerDetectionEnablement(
+        codexInstalled: Bool,
+        claudeInstalled: Bool,
+        geminiInstalled: Bool,
+        antigravityRunning: Bool) -> ProviderDetectionEnablement
+    {
+        // If none installed, keep Codex enabled to match previous behavior.
+        let noneInstalled = !codexInstalled && !claudeInstalled && !geminiInstalled && !antigravityRunning
+        return ProviderDetectionEnablement(
+            codex: codexInstalled || noneInstalled,
+            claude: claudeInstalled,
+            gemini: false,
+            antigravity: antigravityRunning)
+    }
+
     func runInitialProviderDetectionIfNeeded(force: Bool = false) {
         guard force || !self.providerDetectionCompleted else { return }
         LoginShellPathCache.shared.captureOnce { [weak self] _ in
@@ -18,13 +40,11 @@ extension SettingsStore {
         let geminiInstalled = BinaryLocator.resolveGeminiBinary() != nil
         let antigravityRunning = await AntigravityStatusProbe.isRunning()
         let logger = CodexBarLog.logger(LogCategories.providerDetection)
-
-        // If none installed, keep Codex enabled to match previous behavior.
-        let noneInstalled = !codexInstalled && !claudeInstalled && !geminiInstalled && !antigravityRunning
-        let enableCodex = codexInstalled || noneInstalled
-        let enableClaude = claudeInstalled
-        let enableGemini = geminiInstalled
-        let enableAntigravity = antigravityRunning
+        let enablement = Self.providerDetectionEnablement(
+            codexInstalled: codexInstalled,
+            claudeInstalled: claudeInstalled,
+            geminiInstalled: geminiInstalled,
+            antigravityRunning: antigravityRunning)
 
         logger.info(
             "Provider detection results",
@@ -37,23 +57,23 @@ extension SettingsStore {
         logger.info(
             "Provider detection enablement",
             metadata: [
-                "codex": enableCodex ? "1" : "0",
-                "claude": enableClaude ? "1" : "0",
-                "gemini": enableGemini ? "1" : "0",
-                "antigravity": enableAntigravity ? "1" : "0",
+                "codex": enablement.codex ? "1" : "0",
+                "claude": enablement.claude ? "1" : "0",
+                "gemini": enablement.gemini ? "1" : "0",
+                "antigravity": enablement.antigravity ? "1" : "0",
             ])
 
         self.updateProviderConfig(provider: .codex) { entry in
-            entry.enabled = enableCodex
+            entry.enabled = enablement.codex
         }
         self.updateProviderConfig(provider: .claude) { entry in
-            entry.enabled = enableClaude
+            entry.enabled = enablement.claude
         }
         self.updateProviderConfig(provider: .gemini) { entry in
-            entry.enabled = enableGemini
+            entry.enabled = enablement.gemini
         }
         self.updateProviderConfig(provider: .antigravity) { entry in
-            entry.enabled = enableAntigravity
+            entry.enabled = enablement.antigravity
         }
         self.providerDetectionCompleted = true
         logger.info("Provider detection completed")

@@ -54,16 +54,16 @@ struct OpenCodeProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.opencodeCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies from opencode.ai.",
-                manual: "Paste a Cookie header captured from the billing page.",
-                off: "OpenCode cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies from opencode.ai."),
+                manual: L10n.string("Paste a Cookie header captured from the billing page."),
+                off: L10n.string("OpenCode cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "opencode-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies from opencode.ai.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies from opencode.ai."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -82,8 +82,8 @@ struct OpenCodeProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "opencode-workspace-id",
-                title: "Workspace ID",
-                subtitle: "Optional override if workspace lookup fails.",
+                title: L10n.string("Workspace ID"),
+                subtitle: L10n.string("Optional override if workspace lookup fails."),
                 kind: .plain,
                 placeholder: "wrk_…",
                 binding: context.stringBinding(\.opencodeWorkspaceID),

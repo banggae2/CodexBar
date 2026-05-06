@@ -175,7 +175,7 @@ struct ProviderSettingsDescriptorTests {
     }
 
     @Test
-    func `claude exposes usage and cookie pickers`() throws {
+    func `claude exposes only local usage source picker`() throws {
         let suite = "ProviderSettingsDescriptorTests-claude"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
@@ -211,18 +211,19 @@ struct ProviderSettingsDescriptorTests {
             setLastAppActiveRunAt: { _, _ in },
             requestConfirmation: { _ in })
         let pickers = ClaudeProviderImplementation().settingsPickers(context: context)
-        #expect(pickers.contains(where: { $0.id == "claude-usage-source" }))
-        #expect(pickers.contains(where: { $0.id == "claude-cookie-source" }))
-        let keychainPicker = try #require(pickers.first(where: { $0.id == "claude-keychain-prompt-policy" }))
-        let optionIDs = Set(keychainPicker.options.map(\.id))
-        #expect(optionIDs.contains(ClaudeOAuthKeychainPromptMode.never.rawValue))
-        #expect(optionIDs.contains(ClaudeOAuthKeychainPromptMode.onlyOnUserAction.rawValue))
-        #expect(optionIDs.contains(ClaudeOAuthKeychainPromptMode.always.rawValue))
-        #expect(keychainPicker.isEnabled?() ?? true)
+        let usagePicker = try #require(pickers.first(where: { $0.id == "claude-usage-source" }))
+        let usageOptionIDs = Set(usagePicker.options.map(\.id))
+        #expect(usageOptionIDs.contains(ClaudeUsageDataSource.auto.rawValue))
+        #expect(usageOptionIDs.contains(ClaudeUsageDataSource.cli.rawValue))
+        #expect(usageOptionIDs.contains(ClaudeUsageDataSource.log.rawValue))
+        #expect(!usageOptionIDs.contains(ClaudeUsageDataSource.oauth.rawValue))
+        #expect(!usageOptionIDs.contains(ClaudeUsageDataSource.web.rawValue))
+        #expect(!pickers.contains(where: { $0.id == "claude-cookie-source" }))
+        #expect(!pickers.contains(where: { $0.id == "claude-keychain-prompt-policy" }))
     }
 
     @Test
-    func `claude prompt policy picker hidden when experimental reader selected`() throws {
+    func `claude prompt policy picker remains removed when experimental reader selected`() throws {
         let suite = "ProviderSettingsDescriptorTests-claude-prompt-hidden-experimental"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
@@ -261,12 +262,11 @@ struct ProviderSettingsDescriptorTests {
             requestConfirmation: { _ in })
 
         let pickers = ClaudeProviderImplementation().settingsPickers(context: context)
-        let keychainPicker = try #require(pickers.first(where: { $0.id == "claude-keychain-prompt-policy" }))
-        #expect(keychainPicker.isVisible?() == false)
+        #expect(!pickers.contains(where: { $0.id == "claude-keychain-prompt-policy" }))
     }
 
     @Test
-    func `claude keychain prompt policy picker disabled when global keychain disabled`() throws {
+    func `claude prompt policy picker remains removed when global keychain disabled`() throws {
         let suite = "ProviderSettingsDescriptorTests-claude-keychain-disabled"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
@@ -303,10 +303,7 @@ struct ProviderSettingsDescriptorTests {
             requestConfirmation: { _ in })
 
         let pickers = ClaudeProviderImplementation().settingsPickers(context: context)
-        let keychainPicker = try #require(pickers.first(where: { $0.id == "claude-keychain-prompt-policy" }))
-        #expect(keychainPicker.isEnabled?() == false)
-        let subtitle = keychainPicker.dynamicSubtitle?() ?? ""
-        #expect(subtitle.localizedCaseInsensitiveContains("inactive"))
+        #expect(!pickers.contains(where: { $0.id == "claude-keychain-prompt-policy" }))
     }
 
     @Test

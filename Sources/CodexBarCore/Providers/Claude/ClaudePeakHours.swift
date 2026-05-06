@@ -8,6 +8,7 @@ public enum ClaudePeakHours: Sendable {
     public struct Status: Sendable, Equatable {
         public let isPeak: Bool
         public let label: String
+        public let minutesUntilTransition: Int
     }
 
     public static func status(at date: Date) -> Status {
@@ -19,7 +20,7 @@ public enum ClaudePeakHours: Sendable {
               let minute = components.minute,
               let weekday = components.weekday
         else {
-            return Status(isPeak: false, label: "Off-peak")
+            return Status(isPeak: false, label: "Off-peak", minutesUntilTransition: 0)
         }
 
         let isWeekday = weekday >= 2 && weekday <= 6
@@ -32,7 +33,8 @@ public enum ClaudePeakHours: Sendable {
             let remaining = peakEndMinutes - nowMinutes
             return Status(
                 isPeak: true,
-                label: "Peak · ends in \(self.formatDuration(minutes: remaining))")
+                label: "Peak · ends in \(self.formatDuration(minutes: remaining))",
+                minutesUntilTransition: remaining)
         }
 
         let nextPeak = self.nextPeakStart(after: date, calendar: calendar)
@@ -40,7 +42,8 @@ public enum ClaudePeakHours: Sendable {
         let minutes = max(Int(seconds / 60), 0)
         return Status(
             isPeak: false,
-            label: "Off-peak · peak in \(self.formatDuration(minutes: minutes))")
+            label: "Off-peak · peak in \(self.formatDuration(minutes: minutes))",
+            minutesUntilTransition: minutes)
     }
 
     private static func nextPeakStart(after date: Date, calendar: Calendar) -> Date {

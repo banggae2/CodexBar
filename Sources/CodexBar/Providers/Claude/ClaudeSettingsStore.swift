@@ -10,9 +10,9 @@ extension SettingsStore {
         set {
             let source: ProviderSourceMode? = switch newValue {
             case .auto: .auto
-            case .oauth: .oauth
-            case .web: .web
             case .cli: .cli
+            case .log: .log
+            case .oauth, .web: .auto
             }
             self.updateProviderConfig(provider: .claude) { entry in
                 entry.source = source
@@ -67,11 +67,13 @@ extension SettingsStore {
         case .auto, .api:
             return .auto
         case .web:
-            return .web
+            return .auto
         case .cli:
             return .cli
+        case .log:
+            return .log
         case .oauth:
-            return .oauth
+            return .auto
         }
     }
 

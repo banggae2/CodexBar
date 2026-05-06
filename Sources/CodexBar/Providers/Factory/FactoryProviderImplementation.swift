@@ -48,16 +48,16 @@ struct FactoryProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.factoryCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies and WorkOS tokens.",
-                manual: "Paste a Cookie header from app.factory.ai.",
-                off: "Factory cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies and WorkOS tokens."),
+                manual: L10n.string("Paste a Cookie header from app.factory.ai."),
+                off: L10n.string("Factory cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "factory-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies and WorkOS tokens.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies and WorkOS tokens."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -66,7 +66,7 @@ struct FactoryProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .factory) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
         ]
     }
@@ -87,6 +87,6 @@ struct FactoryProviderImplementation: ProviderImplementation {
     func loginMenuAction(context _: ProviderMenuLoginContext)
         -> (label: String, action: MenuDescriptor.MenuAction)?
     {
-        ("Open Droid in Browser...", .loginToProvider(url: "https://app.factory.ai"))
+        (L10n.string("Open Droid in Browser..."), .loginToProvider(url: "https://app.factory.ai"))
     }
 }

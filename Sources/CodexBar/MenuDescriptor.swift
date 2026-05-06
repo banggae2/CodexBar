@@ -111,7 +111,7 @@ struct MenuDescriptor {
                     sections.append(accountSection)
                 }
             } else {
-                sections.append(Section(entries: [.text("No usage configured.", .secondary)]))
+                sections.append(Section(entries: [.text(L10n.string("menu.noUsageConfigured"), .secondary)]))
             }
         }
 
@@ -162,7 +162,7 @@ struct MenuDescriptor {
                 }
                 Self.appendRateWindow(
                     entries: &entries,
-                    title: meta.sessionLabel,
+                    title: L10n.metricLabel(meta.sessionLabel),
                     window: primaryWindow,
                     resetStyle: resetStyle,
                     showUsed: settings.usageBarsShowUsed)
@@ -191,7 +191,7 @@ struct MenuDescriptor {
                 }()
                 Self.appendRateWindow(
                     entries: &entries,
-                    title: meta.weeklyLabel,
+                    title: L10n.metricLabel(meta.weeklyLabel),
                     window: weekly,
                     resetStyle: resetStyle,
                     showUsed: settings.usageBarsShowUsed,
@@ -215,7 +215,7 @@ struct MenuDescriptor {
                     : nil
                 Self.appendRateWindow(
                     entries: &entries,
-                    title: meta.opusLabel ?? "Sonnet",
+                    title: meta.opusLabel.map(L10n.metricLabel) ?? L10n.string("metric.Sonnet"),
                     window: opus,
                     resetStyle: resetStyle,
                     showUsed: settings.usageBarsShowUsed,
@@ -226,11 +226,11 @@ struct MenuDescriptor {
                 if cost.currencyCode == "Quota" {
                     let used = String(format: "%.0f", cost.used)
                     let limit = String(format: "%.0f", cost.limit)
-                    entries.append(.text("Quota: \(used) / \(limit)", .primary))
+                    entries.append(.text(L10n.string("menu.quotaFormat", used, limit), .primary))
                 }
             }
         } else {
-            entries.append(.text("No usage yet", .secondary))
+            entries.append(.text(L10n.string("menu.noUsageYet"), .secondary))
         }
 
         let usageContext = ProviderMenuUsageContext(
@@ -278,27 +278,27 @@ struct MenuDescriptor {
         let redactedEmail = PersonalInfoRedactor.redactEmail(emailText, isEnabled: hidePersonalInfo)
 
         if let emailText, !emailText.isEmpty {
-            entries.append(.text("Account: \(redactedEmail)", .secondary))
+            entries.append(.text(L10n.string("menu.accountFormat", redactedEmail), .secondary))
         }
         if provider == .kilo {
             let kiloLogin = self.kiloLoginParts(loginMethod: loginMethodText)
             if let pass = kiloLogin.pass {
-                entries.append(.text("Plan: \(AccountFormatter.plan(pass))", .secondary))
+                entries.append(.text(L10n.string("menu.planFormat", AccountFormatter.plan(pass)), .secondary))
             }
             for detail in kiloLogin.details {
-                entries.append(.text("Activity: \(detail)", .secondary))
+                entries.append(.text(L10n.string("menu.activityFormat", detail), .secondary))
             }
         } else if let loginMethodText, !loginMethodText.isEmpty {
-            entries.append(.text("Plan: \(AccountFormatter.plan(loginMethodText))", .secondary))
+            entries.append(.text(L10n.string("menu.planFormat", AccountFormatter.plan(loginMethodText)), .secondary))
         }
 
         if metadata.usesAccountFallback {
             if emailText?.isEmpty ?? true, let fallbackEmail = fallback.email, !fallbackEmail.isEmpty {
                 let redacted = PersonalInfoRedactor.redactEmail(fallbackEmail, isEnabled: hidePersonalInfo)
-                entries.append(.text("Account: \(redacted)", .secondary))
+                entries.append(.text(L10n.string("menu.accountFormat", redacted), .secondary))
             }
             if loginMethodText?.isEmpty ?? true, let fallbackPlan = fallback.plan, !fallbackPlan.isEmpty {
-                entries.append(.text("Plan: \(AccountFormatter.plan(fallbackPlan))", .secondary))
+                entries.append(.text(L10n.string("menu.planFormat", AccountFormatter.plan(fallbackPlan)), .secondary))
             }
         }
 
@@ -372,7 +372,7 @@ struct MenuDescriptor {
             } else {
                 let loginAction = self.switchAccountTarget(for: provider, store: store)
                 let hasAccount = self.hasAccount(for: provider, store: store, account: fallbackAccount)
-                let accountLabel = hasAccount ? "Switch Account..." : "Add Account..."
+                let accountLabel = hasAccount ? L10n.string("menu.switchAccount") : L10n.string("menu.addAccount")
                 entries.append(.action(accountLabel, loginAction))
             }
         }
@@ -390,10 +390,10 @@ struct MenuDescriptor {
         }
 
         if metadata?.dashboardURL != nil {
-            entries.append(.action("Usage Dashboard", .dashboard))
+            entries.append(.action(L10n.string("menu.usageDashboard"), .dashboard))
         }
         if metadata?.statusPageURL != nil || metadata?.statusLinkURL != nil {
-            entries.append(.action("Status Page", .statusPage))
+            entries.append(.action(L10n.string("menu.statusPage"), .statusPage))
         }
 
         if let statusLine = self.statusLine(for: provider, store: store) {
@@ -406,13 +406,13 @@ struct MenuDescriptor {
     private static func metaSection(updateReady: Bool) -> Section {
         var entries: [Entry] = []
         if updateReady {
-            entries.append(.action("Update ready, restart now?", .installUpdate))
+            entries.append(.action(L10n.string("menu.updateReady"), .installUpdate))
         }
         entries.append(contentsOf: [
-            .action("Refresh", .refresh),
-            .action("Settings...", .settings),
-            .action("About CodexBar", .about),
-            .action("Quit", .quit),
+            .action(L10n.string("menu.refresh"), .refresh),
+            .action(L10n.string("menu.settings"), .settings),
+            .action(L10n.string("menu.about"), .about),
+            .action(L10n.string("menu.quit"), .quit),
         ])
         return Section(entries: entries)
     }
@@ -426,7 +426,7 @@ struct MenuDescriptor {
         let description = status.description?.trimmingCharacters(in: .whitespacesAndNewlines)
         let label = description?.isEmpty == false ? description! : status.indicator.label
         if let updated = status.updatedAt {
-            let freshness = UsageFormatter.updatedString(from: updated)
+            let freshness = AppUsageFormatter.updatedString(from: updated)
             return "\(label) — \(freshness)"
         }
         return label
@@ -463,12 +463,12 @@ struct MenuDescriptor {
         showUsed: Bool,
         resetOverride: String? = nil)
     {
-        let line = UsageFormatter
+        let line = AppUsageFormatter
             .usageLine(remaining: window.remainingPercent, used: window.usedPercent, showUsed: showUsed)
         entries.append(.text("\(title): \(line)", .primary))
         if let resetOverride {
             entries.append(.text(resetOverride, .secondary))
-        } else if let reset = UsageFormatter.resetLine(for: window, style: resetStyle) {
+        } else if let reset = AppUsageFormatter.resetLine(for: window, style: resetStyle) {
             entries.append(.text(reset, .secondary))
         }
     }

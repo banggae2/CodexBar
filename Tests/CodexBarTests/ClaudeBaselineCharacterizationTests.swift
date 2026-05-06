@@ -96,7 +96,7 @@ struct ClaudeBaselineCharacterizationTests {
     }
 
     @Test
-    func `app auto pipeline order is OAuth then CLI then web`() async {
+    func `app auto pipeline order is CLI then local log`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: true,
@@ -108,11 +108,11 @@ struct ClaudeBaselineCharacterizationTests {
             "CLAUDE_CLI_PATH": "/usr/bin/true",
         ]
         let strategyIDs = await self.strategyIDs(runtime: .app, sourceMode: .auto, env: env, settings: settings)
-        #expect(strategyIDs == ["claude.oauth", "claude.cli", "claude.web"])
+        #expect(strategyIDs == ["claude.cli", "claude.log"])
     }
 
     @Test
-    func `CLI auto pipeline order is web then CLI`() async {
+    func `CLI auto pipeline order is CLI then local log`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: false,
@@ -122,7 +122,7 @@ struct ClaudeBaselineCharacterizationTests {
             "CLAUDE_CLI_PATH": "/usr/bin/true",
         ]
         let strategyIDs = await self.strategyIDs(runtime: .cli, sourceMode: .auto, env: env, settings: settings)
-        #expect(strategyIDs == ["claude.web", "claude.cli"])
+        #expect(strategyIDs == ["claude.cli", "claude.log"])
     }
 
     @Test
@@ -144,7 +144,7 @@ struct ClaudeBaselineCharacterizationTests {
     }
 
     @Test
-    func `auto pipeline records unavailable planned steps when planner has no executable source`() async {
+    func `auto pipeline keeps local log fallback when CLI is unavailable`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: true,
@@ -152,62 +152,31 @@ struct ClaudeBaselineCharacterizationTests {
             manualCookieHeader: nil))
         let env = ["CLAUDE_CLI_PATH": "/definitely/missing/claude"]
 
-        await self.withNoOAuthCredentials {
-            await ClaudeCLIResolver.withResolvedBinaryPathOverrideForTesting("/definitely/missing/claude") {
-                let strategyIDs = await self.strategyIDs(runtime: .app, sourceMode: .auto, env: env, settings: settings)
-                #expect(strategyIDs == ["claude.oauth", "claude.cli", "claude.web"])
-
-                let outcome = await self.fetchOutcome(runtime: .app, sourceMode: .auto, env: env, settings: settings)
-                #expect(outcome.attempts.map(\.strategyID) == ["claude.oauth", "claude.cli", "claude.web"])
-                #expect(outcome.attempts.map(\.wasAvailable) == [false, false, false])
-
-                switch outcome.result {
-                case let .failure(error as ProviderFetchError):
-                    switch error {
-                    case let .noAvailableStrategy(provider):
-                        #expect(provider == .claude)
-                    }
-                case let .failure(error):
-                    Issue.record("Unexpected failure: \(error)")
-                case let .success(result):
-                    Issue.record("Unexpected success: \(result.sourceLabel)")
-                }
-            }
+        await ClaudeCLIResolver.withResolvedBinaryPathOverrideForTesting("/definitely/missing/claude") {
+            let strategyIDs = await self.strategyIDs(runtime: .app, sourceMode: .auto, env: env, settings: settings)
+            #expect(strategyIDs == ["claude.cli", "claude.log"])
         }
     }
 
     @Test
-    func `app auto pipeline retains OAuth bootstrap strategy at startup`() async {
+    func `app auto pipeline does not retain OAuth bootstrap strategy at startup`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: false,
             cookieSource: .off,
             manualCookieHeader: nil))
 
-        await ClaudeOAuthCredentialsStore.withIsolatedMemoryCacheForTesting {
-            ClaudeOAuthCredentialsStore.invalidateCache()
-            ClaudeOAuthCredentialsStore._resetCredentialsFileTrackingForTesting()
-            ClaudeOAuthKeychainAccessGate.resetForTesting()
-            defer {
-                ClaudeOAuthCredentialsStore.invalidateCache()
-                ClaudeOAuthCredentialsStore._resetCredentialsFileTrackingForTesting()
-                ClaudeOAuthKeychainAccessGate.resetForTesting()
-            }
-
-            await self.withNoOAuthCredentials {
-                let strategyIDs = await ClaudeOAuthKeychainPromptPreference.withTaskOverrideForTesting(
-                    .onlyOnUserAction)
-                {
-                    await ProviderRefreshContext.$current.withValue(.startup) {
-                        await ProviderInteractionContext.$current.withValue(.background) {
-                            await self.strategyIDs(runtime: .app, sourceMode: .auto, settings: settings)
-                        }
-                    }
+        let strategyIDs = await ClaudeOAuthKeychainPromptPreference.withTaskOverrideForTesting(
+            .onlyOnUserAction)
+        {
+            await ProviderRefreshContext.$current.withValue(.startup) {
+                await ProviderInteractionContext.$current.withValue(.background) {
+                    await self.strategyIDs(runtime: .app, sourceMode: .auto, settings: settings)
                 }
-                #expect(strategyIDs.first == "claude.oauth")
-                #expect(strategyIDs.contains("claude.oauth"))
             }
         }
+        #expect(strategyIDs == ["claude.cli", "claude.log"])
+        #expect(!strategyIDs.contains("claude.oauth"))
     }
 
     @Test
@@ -220,47 +189,44 @@ struct ClaudeBaselineCharacterizationTests {
         let stubCLIPath = try self.makeStubClaudeCLI()
         let env = ["CLAUDE_CLI_PATH": stubCLIPath]
 
-        await self.withNoOAuthCredentials {
-            let fetchOverride: @Sendable (String, TimeInterval, Bool) async throws
-                -> ClaudeStatusSnapshot = { binary, _, _ in
-                    #expect(binary == stubCLIPath)
-                    return ClaudeStatusSnapshot(
-                        sessionPercentLeft: 88,
-                        weeklyPercentLeft: 60,
-                        opusPercentLeft: 95,
-                        accountEmail: "user@example.com",
-                        accountOrganization: "Example Org",
-                        loginMethod: nil,
-                        primaryResetDescription: "Resets 11am",
-                        secondaryResetDescription: "Resets Nov 21",
-                        opusResetDescription: "Resets Nov 21",
-                        rawText: "stub")
-                }
-            let outcome = await ClaudeStatusProbe.$fetchOverride.withValue(fetchOverride) {
-                await self.fetchOutcome(runtime: .app, sourceMode: .auto, env: env, settings: settings)
+        let fetchOverride: @Sendable (String, TimeInterval, Bool) async throws
+            -> ClaudeStatusSnapshot = { binary, _, _ in
+                #expect(binary == stubCLIPath)
+                return ClaudeStatusSnapshot(
+                    sessionPercentLeft: 88,
+                    weeklyPercentLeft: 60,
+                    opusPercentLeft: 95,
+                    accountEmail: "user@example.com",
+                    accountOrganization: "Example Org",
+                    loginMethod: nil,
+                    primaryResetDescription: "Resets 11am",
+                    secondaryResetDescription: "Resets Nov 21",
+                    opusResetDescription: "Resets Nov 21",
+                    rawText: "stub")
             }
+        let outcome = await ClaudeStatusProbe.$fetchOverride.withValue(fetchOverride) {
+            await self.fetchOutcome(runtime: .app, sourceMode: .auto, env: env, settings: settings)
+        }
 
-            #expect(outcome.attempts.map(\.strategyID) == ["claude.oauth", "claude.cli"])
-            #expect(outcome.attempts.map(\.wasAvailable) == [false, true])
+        #expect(outcome.attempts.map(\.strategyID) == ["claude.cli"])
+        #expect(outcome.attempts.map(\.wasAvailable) == [true])
 
-            switch outcome.result {
-            case let .success(result):
-                #expect(result.strategyID == "claude.cli")
-                #expect(result.sourceLabel == "claude")
-                #expect(result.usage.primary?.usedPercent == 12)
-                #expect(result.usage.secondary?.usedPercent == 40)
-                #expect(result.usage.tertiary?.usedPercent == 5)
-                #expect(result.usage.identity?.accountEmail == "user@example.com")
-            case let .failure(error):
-                Issue.record("Unexpected failure: \(error)")
-            }
+        switch outcome.result {
+        case let .success(result):
+            #expect(result.strategyID == "claude.cli")
+            #expect(result.sourceLabel == "claude")
+            #expect(result.usage.primary?.usedPercent == 12)
+            #expect(result.usage.secondary?.usedPercent == 40)
+            #expect(result.usage.tertiary?.usedPercent == 5)
+            #expect(result.usage.identity?.accountEmail == "user@example.com")
+        case let .failure(error):
+            Issue.record("Unexpected failure: \(error)")
         }
     }
 
     @Test(arguments: [
-        (ProviderSourceMode.oauth, "claude.oauth"),
         (ProviderSourceMode.cli, "claude.cli"),
-        (ProviderSourceMode.web, "claude.web"),
+        (ProviderSourceMode.log, "claude.log"),
     ])
     func `explicit modes resolve single Claude strategy`(
         sourceMode: ProviderSourceMode,
@@ -271,9 +237,8 @@ struct ClaudeBaselineCharacterizationTests {
     }
 
     @Test(arguments: [
-        (ProviderSourceMode.oauth, "claude.oauth"),
         (ProviderSourceMode.cli, "claude.cli"),
-        (ProviderSourceMode.web, "claude.web"),
+        (ProviderSourceMode.log, "claude.log"),
     ])
     func `CLI explicit modes resolve single Claude strategy`(
         sourceMode: ProviderSourceMode,
@@ -284,9 +249,9 @@ struct ClaudeBaselineCharacterizationTests {
     }
 
     @Test
-    func `Claude OAuth token heuristics accept raw and bearer inputs`() {
-        #expect(TokenAccountSupportCatalog.isClaudeOAuthToken("sk-ant-oat-test-token"))
-        #expect(TokenAccountSupportCatalog.isClaudeOAuthToken("Bearer sk-ant-oat-test-token"))
+    func `Claude OAuth token heuristics reject raw and bearer inputs`() {
+        #expect(!TokenAccountSupportCatalog.isClaudeOAuthToken("sk-ant-oat-test-token"))
+        #expect(!TokenAccountSupportCatalog.isClaudeOAuthToken("Bearer sk-ant-oat-test-token"))
     }
 
     @Test

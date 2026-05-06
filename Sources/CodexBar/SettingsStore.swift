@@ -193,6 +193,15 @@ final class SettingsStore {
 }
 
 extension SettingsStore {
+    private struct NotificationDefaults {
+        var login: Bool
+        var augmentExpired: Bool
+        var sessionQuota: Bool
+        var sessionQuotaThreshold: Bool
+        var weeklyLimitThreshold: Bool
+        var weeklyLimitRecovery: Bool
+    }
+
     private static func inferredInitialOpenAIWebAccessEnabled(
         config: CodexBarConfig,
         hadExistingConfig: Bool) -> Bool
@@ -203,12 +212,67 @@ extension SettingsStore {
         return hadExistingConfig
     }
 
+    private static func resolvedUsageThresholds(userDefaults: UserDefaults, key: String) -> [Int] {
+        let rawValues = userDefaults.array(forKey: key) ?? []
+        let values = rawValues.compactMap { value -> Int? in
+            if let int = value as? Int { return int }
+            if let number = value as? NSNumber { return number.intValue }
+            if let string = value as? String { return Int(string) }
+            return nil
+        }
+        let normalized = SessionQuotaNotificationLogic.normalizedUsageThresholds(values)
+        let resolved = normalized.isEmpty ? SessionQuotaNotificationLogic.defaultUsageThresholds : normalized
+        if rawValues.isEmpty {
+            userDefaults.set(resolved, forKey: key)
+        }
+        return resolved
+    }
+
+    private static func resolvedNotificationDefaults(userDefaults: UserDefaults) -> NotificationDefaults {
+        let loginDefault = userDefaults.object(forKey: "loginNotificationsEnabled") as? Bool
+        let login = loginDefault ?? true
+        if loginDefault == nil { userDefaults.set(true, forKey: "loginNotificationsEnabled") }
+
+        let augmentExpiredDefault = userDefaults.object(forKey: "augmentSessionExpiredNotificationsEnabled") as? Bool
+        let augmentExpired = augmentExpiredDefault ?? true
+        if augmentExpiredDefault == nil { userDefaults.set(true, forKey: "augmentSessionExpiredNotificationsEnabled") }
+
+        let sessionQuotaDefault = userDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool
+        let sessionQuota = sessionQuotaDefault ?? true
+        if sessionQuotaDefault == nil { userDefaults.set(true, forKey: "sessionQuotaNotificationsEnabled") }
+
+        let thresholdDefault = userDefaults.object(forKey: "sessionQuotaThresholdNotificationsEnabled") as? Bool
+        let threshold = thresholdDefault ?? sessionQuota
+        if thresholdDefault == nil { userDefaults.set(threshold, forKey: "sessionQuotaThresholdNotificationsEnabled") }
+
+        let weeklyDefault = userDefaults.object(forKey: "weeklyLimitThresholdNotificationsEnabled") as? Bool
+        let weekly = weeklyDefault ?? threshold
+        if weeklyDefault == nil { userDefaults.set(weekly, forKey: "weeklyLimitThresholdNotificationsEnabled") }
+
+        let weeklyRecoveryDefault = userDefaults.object(forKey: "weeklyLimitRecoveryNotificationsEnabled") as? Bool
+        let weeklyRecovery = weeklyRecoveryDefault ?? true
+        if weeklyRecoveryDefault == nil { userDefaults.set(true, forKey: "weeklyLimitRecoveryNotificationsEnabled") }
+
+        return NotificationDefaults(
+            login: login,
+            augmentExpired: augmentExpired,
+            sessionQuota: sessionQuota,
+            sessionQuotaThreshold: threshold,
+            weeklyLimitThreshold: weekly,
+            weeklyLimitRecovery: weeklyRecovery)
+    }
+
     private static func loadDefaultsState(userDefaults: UserDefaults) -> SettingsDefaultsState {
         let refreshDefault = userDefaults.string(forKey: "refreshFrequency")
             .flatMap(RefreshFrequency.init(rawValue:))
         let refreshFrequency = refreshDefault ?? .fiveMinutes
         if refreshDefault == nil {
             userDefaults.set(refreshFrequency.rawValue, forKey: "refreshFrequency")
+        }
+        let appLanguageRaw = userDefaults.string(forKey: AppLanguage.userDefaultsKey)
+        let appLanguage = appLanguageRaw.flatMap(AppLanguage.init(rawValue:)) ?? .system
+        if appLanguageRaw != nil, appLanguage.rawValue != appLanguageRaw {
+            userDefaults.set(appLanguage.rawValue, forKey: AppLanguage.userDefaultsKey)
         }
         let launchAtLogin = userDefaults.object(forKey: "launchAtLogin") as? Bool ?? false
         let debugMenuEnabled = userDefaults.object(forKey: "debugMenuEnabled") as? Bool ?? false
@@ -232,15 +296,19 @@ extension SettingsStore {
         let debugLoadingPatternRaw = userDefaults.string(forKey: "debugLoadingPattern")
         let debugKeepCLISessionsAlive = userDefaults.object(forKey: "debugKeepCLISessionsAlive") as? Bool ?? false
         let statusChecksEnabled = userDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
-        let sessionQuotaDefault = userDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool
-        let sessionQuotaNotificationsEnabled = sessionQuotaDefault ?? true
-        if sessionQuotaDefault == nil {
-            userDefaults.set(true, forKey: "sessionQuotaNotificationsEnabled")
-        }
+        let notificationDefaults = self.resolvedNotificationDefaults(userDefaults: userDefaults)
+        let resolvedSessionQuotaUsageThresholds = self.resolvedUsageThresholds(
+            userDefaults: userDefaults,
+            key: "sessionQuotaUsageThresholds")
+        let resolvedWeeklyLimitUsageThresholds = self.resolvedUsageThresholds(
+            userDefaults: userDefaults,
+            key: "weeklyLimitUsageThresholds")
         let usageBarsShowUsed = userDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let resetTimesShowAbsolute = userDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
         let menuBarShowsBrandIconWithPercent = userDefaults.object(
             forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? false
+        let menuBarUsageDisplayStyleRaw = userDefaults.string(forKey: "menuBarUsageDisplayStyle")
+            ?? MenuBarUsageDisplayStyle.iconPercent.rawValue
         let menuBarDisplayModeRaw = userDefaults.string(forKey: "menuBarDisplayMode")
             ?? MenuBarDisplayMode.percent.rawValue
         let historicalTrackingEnabled = userDefaults.object(forKey: "historicalTrackingEnabled") as? Bool ?? false
@@ -290,6 +358,7 @@ extension SettingsStore {
 
         return SettingsDefaultsState(
             refreshFrequency: refreshFrequency,
+            appLanguageRaw: appLanguage.rawValue,
             launchAtLogin: launchAtLogin,
             debugMenuEnabled: debugMenuEnabled,
             debugDisableKeychainAccess: debugDisableKeychainAccess,
@@ -298,10 +367,18 @@ extension SettingsStore {
             debugLoadingPatternRaw: debugLoadingPatternRaw,
             debugKeepCLISessionsAlive: debugKeepCLISessionsAlive,
             statusChecksEnabled: statusChecksEnabled,
-            sessionQuotaNotificationsEnabled: sessionQuotaNotificationsEnabled,
+            loginNotificationsEnabled: notificationDefaults.login,
+            augmentSessionExpiredNotificationsEnabled: notificationDefaults.augmentExpired,
+            sessionQuotaNotificationsEnabled: notificationDefaults.sessionQuota,
+            sessionQuotaThresholdNotificationsEnabled: notificationDefaults.sessionQuotaThreshold,
+            sessionQuotaUsageThresholdsRaw: resolvedSessionQuotaUsageThresholds,
+            weeklyLimitThresholdNotificationsEnabled: notificationDefaults.weeklyLimitThreshold,
+            weeklyLimitRecoveryNotificationsEnabled: notificationDefaults.weeklyLimitRecovery,
+            weeklyLimitUsageThresholdsRaw: resolvedWeeklyLimitUsageThresholds,
             usageBarsShowUsed: usageBarsShowUsed,
             resetTimesShowAbsolute: resetTimesShowAbsolute,
             menuBarShowsBrandIconWithPercent: menuBarShowsBrandIconWithPercent,
+            menuBarUsageDisplayStyleRaw: menuBarUsageDisplayStyleRaw,
             menuBarDisplayModeRaw: menuBarDisplayModeRaw,
             historicalTrackingEnabled: historicalTrackingEnabled,
             showAllTokenAccountsInMenu: showAllTokenAccountsInMenu,

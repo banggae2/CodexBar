@@ -38,7 +38,7 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
                     .alibabaCodingPlanAPIRegion = AlibabaCodingPlanAPIRegion(rawValue: raw) ?? .international
             })
         let options = AlibabaCodingPlanAPIRegion.allCases.map {
-            ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
+            ProviderSettingsPickerOption(id: $0.rawValue, title: L10n.optionLabel($0.displayName))
         }
 
         let cookieBinding = Binding(
@@ -53,16 +53,16 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.alibabaCodingPlanCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies from Model Studio/Bailian.",
-                manual: "Paste a Cookie header from modelstudio.console.alibabacloud.com.",
-                off: "Alibaba cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies from Model Studio/Bailian."),
+                manual: L10n.string("Paste a Cookie header from modelstudio.console.alibabacloud.com."),
+                off: L10n.string("Alibaba cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "alibaba-coding-plan-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies from Model Studio/Bailian.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies from Model Studio/Bailian."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -71,12 +71,12 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .alibaba) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
             ProviderSettingsPickerDescriptor(
                 id: "alibaba-coding-plan-region",
-                title: "Gateway region",
-                subtitle: "Use international or China mainland console gateways for quota fetches.",
+                title: L10n.string("Gateway region"),
+                subtitle: L10n.string("Use international or China mainland console gateways for quota fetches."),
                 binding: binding,
                 options: options,
                 isVisible: nil,
@@ -89,15 +89,15 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "alibaba-coding-plan-api-key",
-                title: "API key",
-                subtitle: "Stored in ~/.codexbar/config.json. Paste your Coding Plan API key from Model Studio.",
+                title: L10n.string("API key"),
+                subtitle: L10n.string("Stored Coding Plan API key notice"),
                 kind: .secure,
                 placeholder: "cpk-...",
                 binding: context.stringBinding(\.alibabaCodingPlanAPIToken),
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "alibaba-coding-plan-open-dashboard",
-                        title: "Open Coding Plan",
+                        title: L10n.string("Open Coding Plan"),
                         style: .link,
                         isVisible: nil,
                         perform: {
@@ -108,7 +108,7 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
                 onActivate: { context.settings.ensureAlibabaCodingPlanAPITokenLoaded() }),
             ProviderSettingsFieldDescriptor(
                 id: "alibaba-coding-plan-cookie",
-                title: "Cookie header",
+                title: L10n.string("Cookie header"),
                 subtitle: "",
                 kind: .secure,
                 placeholder: "Cookie: ...",
@@ -116,7 +116,7 @@ struct AlibabaCodingPlanProviderImplementation: ProviderImplementation {
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "alibaba-coding-plan-open-dashboard-cookie",
-                        title: "Open Coding Plan",
+                        title: L10n.string("Open Coding Plan"),
                         style: .link,
                         isVisible: nil,
                         perform: {

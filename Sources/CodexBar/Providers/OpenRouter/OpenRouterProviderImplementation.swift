@@ -42,10 +42,8 @@ struct OpenRouterProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "openrouter-api-key",
-                title: "API key",
-                subtitle: "Stored in ~/.codexbar/config.json. "
-                    + "Get your key from openrouter.ai/settings/keys and set a key spending limit "
-                    + "there to enable API key quota tracking.",
+                title: L10n.string("API key"),
+                subtitle: L10n.string("Stored OpenRouter API key notice"),
                 kind: .secure,
                 placeholder: "sk-or-v1-...",
                 binding: context.stringBinding(\.openRouterAPIToken),

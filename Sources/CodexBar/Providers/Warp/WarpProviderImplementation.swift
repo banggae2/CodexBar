@@ -17,16 +17,15 @@ struct WarpProviderImplementation: ProviderImplementation {
         [
             ProviderSettingsFieldDescriptor(
                 id: "warp-api-token",
-                title: "API key",
-                subtitle: "Stored in ~/.codexbar/config.json. In Warp, open Settings > Platform > API Keys, "
-                    + "then create one.",
+                title: L10n.string("API key"),
+                subtitle: L10n.string("Stored Warp API key notice"),
                 kind: .secure,
                 placeholder: "wk-...",
                 binding: context.stringBinding(\.warpAPIToken),
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "warp-open-api-keys",
-                        title: "Open Warp API Key Guide",
+                        title: L10n.string("Open Warp API Key Guide"),
                         style: .link,
                         isVisible: nil,
                         perform: {

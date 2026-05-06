@@ -180,7 +180,7 @@ extension UsageStore {
     /// individual account refresh is cancelled.
     func tokenAccountSnapshotErrorMessage(_ error: any Error) -> String {
         if error is CancellationError {
-            return "Refresh cancelled"
+            return L10n.string("Refresh cancelled")
         }
         let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         return message.isEmpty ? "Refresh failed" : message

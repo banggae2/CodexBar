@@ -53,6 +53,11 @@ extension UsageStore {
             _ = self.settings.refreshFrequency
             _ = self.settings.statusChecksEnabled
             _ = self.settings.sessionQuotaNotificationsEnabled
+            _ = self.settings.sessionQuotaThresholdNotificationsEnabled
+            _ = self.settings.sessionQuotaUsageThresholds
+            _ = self.settings.weeklyLimitThresholdNotificationsEnabled
+            _ = self.settings.weeklyLimitRecoveryNotificationsEnabled
+            _ = self.settings.weeklyLimitUsageThresholds
             _ = self.settings.usageBarsShowUsed
             _ = self.settings.costUsageEnabled
             _ = self.settings.randomBlinkEnabled
@@ -213,6 +218,10 @@ final class UsageStore {
     @ObservationIgnored var lastKnownResetSnapshots: [UsageProvider: UsageSnapshot] = [:]
     @ObservationIgnored var lastKnownSessionRemaining: [UsageProvider: Double] = [:]
     @ObservationIgnored var lastKnownSessionWindowSource: [UsageProvider: SessionQuotaWindowSource] = [:]
+    @ObservationIgnored var sentSessionUsageThresholds: [UsageProvider: Set<Int>] = [:]
+    @ObservationIgnored var lastKnownWeeklyLimitUsed: [UsageProvider: Double] = [:]
+    @ObservationIgnored var lastKnownWeeklyLimitRemaining: [UsageProvider: Double] = [:]
+    @ObservationIgnored var sentWeeklyLimitUsageThresholds: [UsageProvider: Set<Int>] = [:]
     @ObservationIgnored var lastTokenFetchAt: [UsageProvider: Date] = [:]
     @ObservationIgnored var planUtilizationHistory: [UsageProvider: PlanUtilizationHistoryBuckets] = [:]
     @ObservationIgnored var weeklyLimitResetDetectorStates: [String: WeeklyLimitResetDetectorState] = [:]
@@ -631,22 +640,97 @@ final class UsageStore {
         return nil
     }
 
+    private func weeklyLimitWindow(provider: UsageProvider, snapshot: UsageSnapshot) -> RateWindow? {
+        switch provider {
+        case .codex:
+            let projection = self.codexConsumerProjection(
+                surface: .liveCard,
+                snapshotOverride: snapshot,
+                now: Date())
+            return projection.planUtilizationLanes.first(where: { $0.role == .weekly })?.window
+        case .claude:
+            return snapshot.secondary
+        default:
+            return [snapshot.primary, snapshot.secondary, snapshot.tertiary].compactMap(\.self).first {
+                $0.windowMinutes == 10080
+            }
+        }
+    }
+
+    private func handleWeeklyLimitUsageThresholds(provider: UsageProvider, snapshot: UsageSnapshot) {
+        guard let weeklyWindow = self.weeklyLimitWindow(provider: provider, snapshot: snapshot) else {
+            self.lastKnownWeeklyLimitUsed.removeValue(forKey: provider)
+            self.lastKnownWeeklyLimitRemaining.removeValue(forKey: provider)
+            self.sentWeeklyLimitUsageThresholds.removeValue(forKey: provider)
+            return
+        }
+
+        let currentUsed = weeklyWindow.usedPercent
+        let currentRemaining = weeklyWindow.remainingPercent
+        let previousUsed = self.lastKnownWeeklyLimitUsed[provider]
+        let previousRemaining = self.lastKnownWeeklyLimitRemaining[provider]
+        if let previousUsed, currentUsed < previousUsed {
+            self.sentWeeklyLimitUsageThresholds.removeValue(forKey: provider)
+        }
+        defer {
+            self.lastKnownWeeklyLimitUsed[provider] = currentUsed
+            self.lastKnownWeeklyLimitRemaining[provider] = currentRemaining
+        }
+
+        if self.settings.weeklyLimitRecoveryNotificationsEnabled,
+           SessionQuotaNotificationLogic.transition(
+               previousRemaining: previousRemaining,
+               currentRemaining: currentRemaining) == .restored
+        {
+            self.sessionQuotaNotifier.post(
+                transition: .weeklyRestored,
+                provider: provider,
+                badge: nil)
+        }
+
+        guard self.settings.weeklyLimitThresholdNotificationsEnabled else { return }
+
+        let thresholds = self.settings.weeklyLimitUsageThresholds
+        let alreadySent = self.sentWeeklyLimitUsageThresholds[provider] ?? []
+        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
+            previousUsed: previousUsed,
+            currentUsed: currentUsed,
+            thresholds: thresholds,
+            alreadySent: alreadySent)
+        guard !crossed.isEmpty else { return }
+
+        var updated = alreadySent
+        for threshold in crossed {
+            updated.insert(threshold)
+            self.sessionQuotaNotifier.post(
+                transition: .weeklyUsageThreshold(threshold),
+                provider: provider,
+                badge: nil)
+        }
+        self.sentWeeklyLimitUsageThresholds[provider] = updated
+    }
+
     private static func isSessionWindow(_ window: RateWindow) -> Bool {
         guard let minutes = window.windowMinutes else { return true }
         return minutes <= 6 * 60
     }
 
     func handleSessionQuotaTransition(provider: UsageProvider, snapshot: UsageSnapshot) {
+        self.handleWeeklyLimitUsageThresholds(provider: provider, snapshot: snapshot)
+
         // Session quota notifications are tied to the primary session window. Copilot free plans can
         // expose only chat quota, so allow Copilot to fall back to secondary for transition tracking.
         guard let sessionWindow = self.sessionQuotaWindow(provider: provider, snapshot: snapshot) else {
             self.lastKnownSessionRemaining.removeValue(forKey: provider)
             self.lastKnownSessionWindowSource.removeValue(forKey: provider)
+            self.sentSessionUsageThresholds.removeValue(forKey: provider)
             return
         }
         let currentRemaining = sessionWindow.window.remainingPercent
+        let currentUsed = sessionWindow.window.usedPercent
         let currentSource = sessionWindow.source
         let previousRemaining = self.lastKnownSessionRemaining[provider]
+        let previousUsed = previousRemaining.map { max(0, min(100, 100 - $0)) }
         let previousSource = self.lastKnownSessionWindowSource[provider]
 
         if let previousSource, previousSource != currentSource {
@@ -656,6 +740,7 @@ final class UsageStore {
                     "currSource=\(currentSource.rawValue) curr=\(currentRemaining)")
             self.lastKnownSessionRemaining[provider] = currentRemaining
             self.lastKnownSessionWindowSource[provider] = currentSource
+            self.sentSessionUsageThresholds.removeValue(forKey: provider)
             return
         }
 
@@ -664,17 +749,25 @@ final class UsageStore {
             self.lastKnownSessionWindowSource[provider] = currentSource
         }
 
-        guard self.settings.sessionQuotaNotificationsEnabled else {
-            if SessionQuotaNotificationLogic.isDepleted(currentRemaining) ||
-                SessionQuotaNotificationLogic.isDepleted(previousRemaining)
-            {
-                let providerText = provider.rawValue
-                let message =
-                    "notifications disabled: provider=\(providerText) " +
-                    "prev=\(previousRemaining ?? -1) curr=\(currentRemaining)"
-                self.sessionQuotaLogger.debug(message)
+        if self.settings.sessionQuotaThresholdNotificationsEnabled {
+            let thresholds = self.settings.sessionQuotaUsageThresholds
+            let alreadySent = self.sentSessionUsageThresholds[provider] ?? []
+            let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
+                previousUsed: previousUsed,
+                currentUsed: currentUsed,
+                thresholds: thresholds,
+                alreadySent: alreadySent)
+            if !crossed.isEmpty {
+                var updated = alreadySent
+                for threshold in crossed {
+                    updated.insert(threshold)
+                    self.sessionQuotaNotifier.post(
+                        transition: .usageThreshold(threshold),
+                        provider: provider,
+                        badge: nil)
+                }
+                self.sentSessionUsageThresholds[provider] = updated
             }
-            return
         }
 
         guard previousRemaining != nil else {
@@ -682,7 +775,6 @@ final class UsageStore {
                 let providerText = provider.rawValue
                 let message = "startup depleted: provider=\(providerText) curr=\(currentRemaining)"
                 self.sessionQuotaLogger.info(message)
-                self.sessionQuotaNotifier.post(transition: .depleted, provider: provider, badge: nil)
             }
             return
         }
@@ -690,6 +782,9 @@ final class UsageStore {
         let transition = SessionQuotaNotificationLogic.transition(
             previousRemaining: previousRemaining,
             currentRemaining: currentRemaining)
+        if transition == .restored {
+            self.sentSessionUsageThresholds.removeValue(forKey: provider)
+        }
         guard transition != .none else {
             if SessionQuotaNotificationLogic.isDepleted(currentRemaining) ||
                 SessionQuotaNotificationLogic.isDepleted(previousRemaining)
@@ -710,7 +805,17 @@ final class UsageStore {
             "prev=\(previousRemaining ?? -1) curr=\(currentRemaining)"
         self.sessionQuotaLogger.info(message)
 
-        self.sessionQuotaNotifier.post(transition: transition, provider: provider, badge: nil)
+        let shouldPostTransition = switch transition {
+        case .depleted:
+            false
+        case .restored:
+            self.settings.sessionQuotaNotificationsEnabled
+        case .none, .usageThreshold, .weeklyUsageThreshold, .weeklyRestored:
+            false
+        }
+        if shouldPostTransition {
+            self.sessionQuotaNotifier.post(transition: transition, provider: provider, badge: nil)
+        }
     }
 
     private func refreshStatus(_ provider: UsageProvider) async {

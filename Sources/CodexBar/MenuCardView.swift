@@ -11,15 +11,15 @@ struct UsageMenuCardView: View {
 
             var labelSuffix: String {
                 switch self {
-                case .left: "left"
-                case .used: "used"
+                case .left: L10n.string("left")
+                case .used: L10n.string("used")
                 }
             }
 
             var accessibilityLabel: String {
                 switch self {
-                case .left: "Usage remaining"
-                case .used: "Usage used"
+                case .left: L10n.string("Usage remaining")
+                case .used: L10n.string("Usage used")
                 }
             }
         }
@@ -64,7 +64,12 @@ struct UsageMenuCardView: View {
             }
 
             var percentLabel: String {
-                String(format: "%.0f%% %@", self.percent, self.percentStyle.labelSuffix)
+                switch self.percentStyle {
+                case .left:
+                    L10n.string("Percent left format", self.percent)
+                case .used:
+                    L10n.string("Percent used format", self.percent)
+                }
             }
         }
 
@@ -112,9 +117,9 @@ struct UsageMenuCardView: View {
 
     static func popupMetricTitle(provider: UsageProvider, metric: Model.Metric) -> String {
         if provider == .openrouter, metric.id == "primary" {
-            return "API key limit"
+            return L10n.string("API key limit")
         }
-        return metric.title
+        return L10n.metricLabel(metric.title)
     }
 
     var body: some View {
@@ -177,7 +182,7 @@ struct UsageMenuCardView: View {
                     }
                     if let tokenUsage = self.model.tokenUsage {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
+                            Text(L10n.string("Cost"))
                                 .font(.body)
                                 .fontWeight(.medium)
                             Text(tokenUsage.sessionLine)
@@ -310,7 +315,7 @@ private struct CopyIconButton: View {
                 .frame(width: 18, height: 18)
         }
         .buttonStyle(CopyIconButtonStyle(isHighlighted: self.isHighlighted))
-        .accessibilityLabel(self.didCopy ? "Copied" : "Copy error")
+        .accessibilityLabel(L10n.string(self.didCopy ? "Copied" : "Copy error"))
     }
 
     private func copyToPasteboard() {
@@ -333,12 +338,12 @@ private struct ProviderCostContent: View {
             UsageProgressBar(
                 percent: self.section.percentUsed,
                 tint: self.progressColor,
-                accessibilityLabel: "Extra usage spent")
+                accessibilityLabel: L10n.string("Extra usage spent"))
             HStack(alignment: .firstTextBaseline) {
                 Text(self.section.spendLine)
                     .font(.footnote)
                 Spacer()
-                Text(String(format: "%.0f%% used", min(100, max(0, self.section.percentUsed))))
+                Text(L10n.string("Percent used format", min(100, max(0, self.section.percentUsed))))
                     .font(.footnote)
                     .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
             }
@@ -536,19 +541,19 @@ private struct CreditsBarContent: View {
 
     private var scaleText: String {
         let scale = UsageFormatter.tokenCountString(Int(Self.fullScaleTokens))
-        return "\(scale) tokens"
+        return L10n.string("Tokens format", scale)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Credits")
+            Text(L10n.string("Credits"))
                 .font(.body)
                 .fontWeight(.medium)
             if let percentLeft {
                 UsageProgressBar(
                     percent: percentLeft,
                     tint: self.progressColor,
-                    accessibilityLabel: "Credits remaining")
+                    accessibilityLabel: L10n.string("Credits remaining"))
                 HStack(alignment: .firstTextBaseline) {
                     Text(self.creditsText)
                         .font(.caption)
@@ -589,7 +594,7 @@ struct UsageMenuCardCostSectionView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let tokenUsage = self.model.tokenUsage {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
+                            Text(L10n.string("Cost"))
                                 .font(.body)
                                 .fontWeight(.medium)
                             Text(tokenUsage.sessionLine)
@@ -756,7 +761,9 @@ extension UsageMenuCardView.Model {
             lastError: input.lastError,
             now: input.now)
         let redacted = Self.redactedText(input: input, subtitle: subtitle)
-        let placeholder = input.snapshot == nil && !input.isRefreshing && input.lastError == nil ? "No usage yet" : nil
+        let placeholder = input.snapshot == nil && !input.isRefreshing && input.lastError == nil
+            ? L10n.string("No usage yet")
+            : nil
 
         return UsageMenuCardView.Model(
             provider: input.provider,
@@ -794,7 +801,12 @@ extension UsageMenuCardView.Model {
 
         if input.provider == .claude, input.claudePeakHoursEnabled {
             let peakStatus = ClaudePeakHours.status(at: input.now)
-            return [peakStatus.label]
+            let duration = AppUsageFormatter.durationDescription(minutes: peakStatus.minutesUntilTransition)
+            return [
+                peakStatus.isPeak
+                    ? L10n.string("Claude peak ends format", duration)
+                    : L10n.string("Claude off peak starts format", duration),
+            ]
         }
 
         guard input.provider == .openrouter,
@@ -805,8 +817,8 @@ extension UsageMenuCardView.Model {
 
         return switch openRouter.keyQuotaStatus {
         case .available: []
-        case .noLimitConfigured: ["No limit set for the API key"]
-        case .unavailable: ["API key limit unavailable right now"]
+        case .noLimitConfigured: [L10n.string("No limit set for the API key")]
+        case .unavailable: [L10n.string("API key limit unavailable right now")]
         }
     }
 
@@ -895,14 +907,14 @@ extension UsageMenuCardView.Model {
         }
 
         if isRefreshing, snapshot == nil {
-            return ("Refreshing...", .loading)
+            return (L10n.string("Refreshing..."), .loading)
         }
 
         if let updated = snapshot?.updatedAt {
             return (UsageFormatter.updatedString(from: updated, now: now), .info)
         }
 
-        return ("Not fetched yet", .info)
+        return (L10n.string("Not fetched yet"), .info)
     }
 
     private struct RedactedText {
@@ -992,7 +1004,7 @@ extension UsageMenuCardView.Model {
                 : Self.resetText(for: opus, style: input.resetTimeDisplayStyle, now: input.now)
             metrics.append(Metric(
                 id: "tertiary",
-                title: input.metadata.opusLabel ?? "Sonnet",
+                title: input.metadata.opusLabel ?? L10n.string("metric.Sonnet"),
                 percent: Self.clamped(input.usageBarsShowUsed ? opus.usedPercent : opus.remainingPercent),
                 percentStyle: percentStyle,
                 resetText: opusResetText,
@@ -1317,7 +1329,7 @@ extension UsageMenuCardView.Model {
             let currentStr = UsageFormatter.tokenCountString(currentValue)
             let usageStr = UsageFormatter.tokenCountString(usage)
             let remainingStr = UsageFormatter.tokenCountString(remaining)
-            return "\(currentStr) / \(usageStr) (\(remainingStr) remaining)"
+            return L10n.string("Zai limit detail format", currentStr, usageStr, remainingStr)
         }
 
         return nil
@@ -1335,7 +1347,7 @@ extension UsageMenuCardView.Model {
 
         let remaining = UsageFormatter.usdString(keyRemaining)
         let limit = UsageFormatter.usdString(keyLimit)
-        return "\(remaining)/\(limit) left"
+        return L10n.string("Remaining limit left format", remaining, limit)
     }
 
     private struct PaceDetail {
@@ -1380,21 +1392,21 @@ extension UsageMenuCardView.Model {
               let resetsAt = weekly.resetsAt
         else { return nil }
 
-        let countdown = UsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
-        let resetText = "Regenerates \(countdown)"
+        let countdown = AppUsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
+        let resetText = L10n.string("Regenerates format", countdown)
 
         let nextRegenPercent = (nextRegenAmount / cost.limit) * 100
         let afterNextRegenRemaining = min(100, weekly.remainingPercent + nextRegenPercent)
         let afterNextRegen = showUsed ? max(0, 100 - afterNextRegenRemaining) : afterNextRegenRemaining
-        let suffix = showUsed ? "used after next regen" : "after next regen"
+        let suffix = showUsed ? L10n.string("used after next regen") : L10n.string("after next regen")
         let ticksToFull = max(0, cost.used) / nextRegenAmount
-        let left = String(format: "%.0f%% %@", afterNextRegen, suffix)
+        let left = L10n.string("Percent suffix format", afterNextRegen, suffix)
         let right = if ticksToFull <= 0.1 {
-            "Near full"
+            L10n.string("Near full")
         } else if ticksToFull < 1.5 {
-            "Full in ~1 regen"
+            L10n.string("Full in ~1 regen")
         } else {
-            String(format: "Full in ~%.0f regens", ceil(ticksToFull))
+            L10n.string("Full in regens format", ceil(ticksToFull))
         }
         return (resetText, PaceDetail(leftLabel: left, rightLabel: right, pacePercent: nil, paceOnTop: true))
     }
@@ -1409,22 +1421,22 @@ extension UsageMenuCardView.Model {
               nextRegenPercent > 0
         else { return nil }
 
-        let countdown = UsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
-        let resetText = "Regenerates \(countdown)"
+        let countdown = AppUsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
+        let resetText = L10n.string("Regenerates format", countdown)
 
         let afterNextRegenRemaining = min(100, window.remainingPercent + nextRegenPercent)
         let afterNextRegen = showUsed ? max(0, 100 - afterNextRegenRemaining) : afterNextRegenRemaining
-        let suffix = showUsed ? "used after next regen" : "after next regen"
-        let left = String(format: "%.0f%% %@", afterNextRegen, suffix)
+        let suffix = showUsed ? L10n.string("used after next regen") : L10n.string("after next regen")
+        let left = L10n.string("Percent suffix format", afterNextRegen, suffix)
 
         let missingPercent = max(0, window.usedPercent)
         let ticksToFull = missingPercent / nextRegenPercent
         let right = if ticksToFull <= 0.1 {
-            "Near full"
+            L10n.string("Near full")
         } else if ticksToFull < 1.5 {
-            "Full in ~1 regen"
+            L10n.string("Full in ~1 regen")
         } else {
-            String(format: "Full in ~%.0f regens", ceil(ticksToFull))
+            L10n.string("Full in regens format", ceil(ticksToFull))
         }
 
         return (resetText, PaceDetail(leftLabel: left, rightLabel: right, pacePercent: nil, paceOnTop: true))
@@ -1437,7 +1449,7 @@ extension UsageMenuCardView.Model {
     {
         guard metadata.supportsCredits else { return nil }
         if let credits {
-            return UsageFormatter.creditsString(from: credits.remaining)
+            return AppUsageFormatter.creditsString(from: credits.remaining)
         }
         if let error, !error.isEmpty {
             return error.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1464,9 +1476,9 @@ extension UsageMenuCardView.Model {
         let sessionTokens = snapshot.sessionTokens.map { UsageFormatter.tokenCountString($0) }
         let sessionLine: String = {
             if let sessionTokens {
-                return "Today: \(sessionCost) · \(sessionTokens) tokens"
+                return L10n.string("Today cost tokens format", sessionCost, sessionTokens)
             }
-            return "Today: \(sessionCost)"
+            return L10n.string("Today cost format", sessionCost)
         }()
 
         let monthCost = snapshot.last30DaysCostUSD.map { UsageFormatter.usdString($0) } ?? "—"
@@ -1475,9 +1487,9 @@ extension UsageMenuCardView.Model {
         let monthTokens = monthTokensValue.map { UsageFormatter.tokenCountString($0) }
         let monthLine: String = {
             if let monthTokens {
-                return "Last 30 days: \(monthCost) · \(monthTokens) tokens"
+                return L10n.string("Last 30 days cost tokens format", monthCost, monthTokens)
             }
-            return "Last 30 days: \(monthCost)"
+            return L10n.string("Last 30 days cost format", monthCost)
         }()
         let err = (error?.isEmpty ?? true) ? nil : error
         return TokenUsageSection(
@@ -1501,22 +1513,22 @@ extension UsageMenuCardView.Model {
         let title: String
 
         if cost.currencyCode == "Quota" {
-            title = "Quota usage"
+            title = L10n.string("Quota usage")
             used = String(format: "%.0f", cost.used)
             limit = String(format: "%.0f", cost.limit)
         } else {
-            title = "Extra usage"
+            title = L10n.string("Extra usage")
             used = UsageFormatter.currencyString(cost.used, currencyCode: cost.currencyCode)
             limit = UsageFormatter.currencyString(cost.limit, currencyCode: cost.currencyCode)
         }
 
         let percentUsed = Self.clamped((cost.used / cost.limit) * 100)
-        let periodLabel = cost.period ?? "This month"
+        let periodLabel = cost.period.map(L10n.metricLabel) ?? L10n.string("This month")
 
         return ProviderCostSection(
             title: title,
             percentUsed: percentUsed,
-            spendLine: "\(periodLabel): \(used) / \(limit)")
+            spendLine: L10n.string("Spend line format", periodLabel, used, limit))
     }
 
     private static func clamped(_ value: Double) -> Double {
@@ -1533,7 +1545,7 @@ extension UsageMenuCardView.Model {
         style: ResetTimeDisplayStyle,
         now: Date) -> String?
     {
-        UsageFormatter.resetLine(for: window, style: style, now: now)
+        AppUsageFormatter.resetLine(for: window, style: style, now: now)
     }
 }
 

@@ -37,11 +37,9 @@ public struct AlibabaCodingPlanSettingsReader: Sendable {
     public static func quotaURL(
         environment: [String: String] = ProcessInfo.processInfo.environment) -> URL?
     {
-        guard let raw = self.cleaned(environment[self.quotaURLKey]) else { return nil }
-        if let url = URL(string: raw), url.scheme != nil {
-            return url
-        }
-        return URL(string: "https://\(raw)")
+        ProviderEndpointSafety.trustedHTTPSURL(
+            self.cleaned(environment[self.quotaURLKey]),
+            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
     }
 
     static func cleaned(_ raw: String?) -> String? {

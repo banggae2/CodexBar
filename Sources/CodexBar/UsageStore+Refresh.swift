@@ -119,6 +119,7 @@ extension UsageStore {
                 self.recordCodexHistoricalSampleIfNeeded(snapshot: backfilled)
             }
         case let .failure(error):
+            guard !(error is CancellationError) else { return }
             if provider == .codex,
                let codexExpectedGuard,
                !self.shouldApplyCodexScopedFailure(expectedGuard: codexExpectedGuard)

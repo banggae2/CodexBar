@@ -5,6 +5,7 @@ enum PreferencesTab: String, CaseIterable, Hashable {
     case general
     case providers
     case display
+    case notifications
     case advanced
     case about
     case debug
@@ -15,12 +16,13 @@ enum PreferencesTab: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .providers: "Providers"
-        case .display: "Display"
-        case .advanced: "Advanced"
-        case .about: "About"
-        case .debug: "Debug"
+        case .general: L10n.string("tab.general")
+        case .providers: L10n.string("tab.providers")
+        case .display: L10n.string("tab.display")
+        case .notifications: L10n.string("tab.notifications")
+        case .advanced: L10n.string("tab.advanced")
+        case .about: L10n.string("tab.about")
+        case .debug: L10n.string("tab.debug")
         }
     }
 
@@ -67,7 +69,7 @@ struct PreferencesView: View {
     var body: some View {
         TabView(selection: self.$selection.tab) {
             GeneralPane(settings: self.settings, store: self.store)
-                .tabItem { Label("General", systemImage: "gearshape") }
+                .tabItem { Label(L10n.string("tab.general"), systemImage: "gearshape") }
                 .tag(PreferencesTab.general)
 
             ProvidersPane(
@@ -75,30 +77,35 @@ struct PreferencesView: View {
                 store: self.store,
                 managedCodexAccountCoordinator: self.managedCodexAccountCoordinator,
                 codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator)
-                .tabItem { Label("Providers", systemImage: "square.grid.2x2") }
+                .tabItem { Label(L10n.string("tab.providers"), systemImage: "square.grid.2x2") }
                 .tag(PreferencesTab.providers)
 
             DisplayPane(settings: self.settings, store: self.store)
-                .tabItem { Label("Display", systemImage: "eye") }
+                .tabItem { Label(L10n.string("tab.display"), systemImage: "eye") }
                 .tag(PreferencesTab.display)
 
+            NotificationsPane(settings: self.settings)
+                .tabItem { Label(L10n.string("tab.notifications"), systemImage: "bell") }
+                .tag(PreferencesTab.notifications)
+
             AdvancedPane(settings: self.settings)
-                .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
+                .tabItem { Label(L10n.string("tab.advanced"), systemImage: "slider.horizontal.3") }
                 .tag(PreferencesTab.advanced)
 
             AboutPane(updater: self.updater)
-                .tabItem { Label("About", systemImage: "info.circle") }
+                .tabItem { Label(L10n.string("tab.about"), systemImage: "info.circle") }
                 .tag(PreferencesTab.about)
 
             if self.settings.debugMenuEnabled {
                 DebugPane(settings: self.settings, store: self.store)
-                    .tabItem { Label("Debug", systemImage: "ladybug") }
+                    .tabItem { Label(L10n.string("tab.debug"), systemImage: "ladybug") }
                     .tag(PreferencesTab.debug)
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .frame(width: self.contentWidth, height: self.contentHeight)
+        .id(self.settings.appLanguage.rawValue)
         .onAppear {
             self.updateLayout(for: self.selection.tab, animate: false)
             self.ensureValidTabSelection()
@@ -124,14 +131,8 @@ struct PreferencesView: View {
         Self.resizeSettingsWindow(width: tab.preferredWidth, height: tab.preferredHeight, animate: animate)
     }
 
-    private static let settingsWindowIdentifier = "com_apple_SwiftUI_Settings_window"
-    private static let knownTabTitles = Set(PreferencesTab.allCases.map(\.title))
-
     private static func resizeSettingsWindow(width: CGFloat, height: CGFloat, animate: Bool) {
-        guard let window = NSApp.windows.first(where: {
-            $0.identifier?.rawValue == settingsWindowIdentifier
-                || knownTabTitles.contains($0.title)
-        }) else { return }
+        guard let window = PreferencesWindowFocus.settingsWindow() else { return }
         let toolbarHeight = window.frame.height - window.contentLayoutRect.height
         guard toolbarHeight > 0 else { return }
         let newSize = NSSize(width: width, height: height + toolbarHeight)

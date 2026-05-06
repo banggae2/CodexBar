@@ -97,8 +97,7 @@ struct CodexBarApp: App {
 
     private func openSettings(tab: PreferencesTab) {
         self.preferencesSelection.tab = tab
-        NSApp.activate(ignoringOtherApps: true)
-        _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        PreferencesWindowFocus.openSettingsWindow()
     }
 }
 

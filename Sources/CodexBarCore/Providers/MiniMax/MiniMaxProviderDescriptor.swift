@@ -46,7 +46,7 @@ public enum MiniMaxProviderDescriptor {
             return [MiniMaxCodingPlanFetchStrategy()]
         case .api:
             return [MiniMaxAPIFetchStrategy()]
-        case .cli, .oauth:
+        case .cli, .log, .oauth:
             return []
         case .auto:
             break

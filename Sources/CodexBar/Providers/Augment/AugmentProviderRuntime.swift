@@ -75,7 +75,12 @@ final class AugmentProviderRuntime: ProviderRuntime {
             await store.refreshProvider(.augment)
         }
 
-        self.keepalive = AugmentSessionKeepalive(logger: logger, onSessionRecovered: onSessionRecovered)
+        self.keepalive = AugmentSessionKeepalive(
+            logger: logger,
+            notificationsEnabled: { [weak store = context.store] in
+                store?.settings.augmentSessionExpiredNotificationsEnabled ?? true
+            },
+            onSessionRecovered: onSessionRecovered)
         self.keepalive?.start()
         context.store.augmentLogger.info("Augment keepalive started")
         #endif

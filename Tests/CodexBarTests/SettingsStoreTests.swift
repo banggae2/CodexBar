@@ -518,6 +518,43 @@ struct SettingsStoreTests {
     }
 
     @Test
+    func `defaults user notification categories to enabled`() throws {
+        let suite = "SettingsStoreTests-user-notification-categories"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.loginNotificationsEnabled)
+        #expect(store.augmentSessionExpiredNotificationsEnabled)
+        #expect(defaults.bool(forKey: "loginNotificationsEnabled"))
+        #expect(defaults.bool(forKey: "augmentSessionExpiredNotificationsEnabled"))
+    }
+
+    @Test
+    func `defaults separate quota threshold notifications to quarter step presets`() throws {
+        let suite = "SettingsStoreTests-quota-threshold-presets"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.sessionQuotaThresholdNotificationsEnabled == true)
+        #expect(store.sessionQuotaUsageThresholds == [25, 50, 75, 100])
+        #expect(store.weeklyLimitThresholdNotificationsEnabled == true)
+        #expect(store.weeklyLimitRecoveryNotificationsEnabled == true)
+        #expect(store.weeklyLimitUsageThresholds == [25, 50, 75, 100])
+    }
+
+    @Test
     func `defaults claude usage source to auto`() throws {
         let suite = "SettingsStoreTests-claude-source"
         let defaults = try #require(UserDefaults(suiteName: suite))

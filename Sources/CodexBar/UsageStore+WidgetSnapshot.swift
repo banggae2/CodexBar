@@ -102,9 +102,9 @@ extension UsageStore {
                 guard let window = projection.rateWindow(for: lane) else { return nil }
                 let title = switch lane {
                 case .session:
-                    metadata?.sessionLabel ?? "Session"
+                    L10n.metricLabel(metadata?.sessionLabel ?? "Session")
                 case .weekly:
-                    metadata?.weeklyLabel ?? "Weekly"
+                    L10n.metricLabel(metadata?.weeklyLabel ?? "Weekly")
                 }
                 return WidgetSnapshot.WidgetUsageRowSnapshot(
                     id: lane.rawValue,
@@ -116,11 +116,11 @@ extension UsageStore {
         let rows: [WidgetSnapshot.WidgetUsageRowSnapshot] = [
             WidgetSnapshot.WidgetUsageRowSnapshot(
                 id: "primary",
-                title: metadata?.sessionLabel ?? "Session",
+                title: L10n.metricLabel(metadata?.sessionLabel ?? "Session"),
                 percentLeft: snapshot.primary?.remainingPercent),
             WidgetSnapshot.WidgetUsageRowSnapshot(
                 id: "secondary",
-                title: metadata?.weeklyLabel ?? "Weekly",
+                title: L10n.metricLabel(metadata?.weeklyLabel ?? "Weekly"),
                 percentLeft: snapshot.secondary?.remainingPercent),
         ]
         return rows.filter { $0.percentLeft != nil }

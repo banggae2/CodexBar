@@ -11,7 +11,7 @@ struct CodexProviderImplementation: ProviderImplementation {
     @MainActor
     func presentation(context _: ProviderPresentationContext) -> ProviderPresentation {
         ProviderPresentation { context in
-            context.store.version(for: context.provider) ?? "not detected"
+            context.store.version(for: context.provider) ?? L10n.string("not detected")
         }
     }
 
@@ -74,8 +74,8 @@ struct CodexProviderImplementation: ProviderImplementation {
         return [
             ProviderSettingsToggleDescriptor(
                 id: "codex-historical-tracking",
-                title: "Historical tracking",
-                subtitle: "Stores local Codex usage history (8 weeks) to personalize Pace predictions.",
+                title: L10n.string("Historical tracking"),
+                subtitle: L10n.string("Stores local Codex usage history to personalize Pace predictions."),
                 binding: context.boolBinding(\.historicalTrackingEnabled),
                 statusText: nil,
                 actions: [],
@@ -85,10 +85,12 @@ struct CodexProviderImplementation: ProviderImplementation {
                 onAppearWhenEnabled: nil),
             ProviderSettingsToggleDescriptor(
                 id: "codex-openai-web-extras",
-                title: "OpenAI web extras",
+                title: L10n.string("OpenAI web extras"),
                 subtitle: [
-                    "Optional.",
-                    "Turn this on to show code review, usage breakdown, and credits history via chatgpt.com.",
+                    L10n.string("Optional."),
+                    L10n
+                        .string(
+                            "Turn this on to show code review, usage breakdown, and credits history via chatgpt.com."),
                 ].joined(separator: " "),
                 binding: extrasBinding,
                 statusText: nil,
@@ -99,10 +101,10 @@ struct CodexProviderImplementation: ProviderImplementation {
                 onAppearWhenEnabled: nil),
             ProviderSettingsToggleDescriptor(
                 id: "codex-openai-web-battery-saver",
-                title: "Battery Saver",
+                title: L10n.string("Battery Saver"),
                 subtitle: [
-                    "Limits background chatgpt.com refreshes to reduce battery and network usage.",
-                    "Dashboard extras may stay stale until you refresh them manually.",
+                    L10n.string("Limits background chatgpt.com refreshes to reduce battery and network usage."),
+                    L10n.string("Dashboard extras may stay stale until you refresh them manually."),
                 ].joined(separator: " "),
                 binding: batterySaverBinding,
                 statusText: nil,
@@ -128,7 +130,7 @@ struct CodexProviderImplementation: ProviderImplementation {
             })
 
         let usageOptions = CodexUsageDataSource.allCases.map {
-            ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
+            ProviderSettingsPickerOption(id: $0.rawValue, title: L10n.optionLabel($0.displayName))
         }
         let cookieOptions = ProviderCookieSourceUI.options(
             allowsOff: true,
@@ -138,16 +140,16 @@ struct CodexProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.codexCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies for dashboard extras.",
-                manual: "Paste a Cookie header from a chatgpt.com request.",
-                off: "Disable OpenAI dashboard cookie usage.")
+                auto: L10n.string("Automatic imports browser cookies for dashboard extras."),
+                manual: L10n.string("Paste a Cookie header from a chatgpt.com request."),
+                off: L10n.string("Disable OpenAI dashboard cookie usage."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "codex-usage-source",
-                title: "Usage source",
-                subtitle: "Auto falls back to the next source if the preferred one fails.",
+                title: L10n.string("Usage source"),
+                subtitle: L10n.string("Auto falls back to the next source if the preferred one fails."),
                 binding: usageBinding,
                 options: usageOptions,
                 isVisible: nil,
@@ -159,8 +161,8 @@ struct CodexProviderImplementation: ProviderImplementation {
                 }),
             ProviderSettingsPickerDescriptor(
                 id: "codex-cookie-source",
-                title: "OpenAI cookies",
-                subtitle: "Automatic imports browser cookies for dashboard extras.",
+                title: L10n.string("OpenAI cookies"),
+                subtitle: L10n.string("Automatic imports browser cookies for dashboard extras."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -169,7 +171,7 @@ struct CodexProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard let entry = CookieHeaderCache.load(provider: .codex) else { return nil }
                     let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
+                    return L10n.string("Cached source time format", entry.sourceLabel, when)
                 }),
         ]
     }
@@ -199,9 +201,13 @@ struct CodexProviderImplementation: ProviderImplementation {
         else { return }
 
         if let credits = context.store.credits {
-            entries.append(.text("Credits: \(UsageFormatter.creditsString(from: credits.remaining))", .primary))
+            entries.append(.text(
+                L10n.string("Credits line format", AppUsageFormatter.creditsString(from: credits.remaining)),
+                .primary))
             if let latest = credits.events.first {
-                entries.append(.text("Last spend: \(UsageFormatter.creditEventSummary(latest))", .secondary))
+                entries.append(.text(
+                    L10n.string("Last spend format", AppUsageFormatter.creditEventSummary(latest)),
+                    .secondary))
             }
         } else {
             let hint = context.store.userFacingLastCreditsError ?? context.metadata.creditsHint
@@ -213,7 +219,7 @@ struct CodexProviderImplementation: ProviderImplementation {
     func loginMenuAction(context _: ProviderMenuLoginContext)
         -> (label: String, action: MenuDescriptor.MenuAction)?
     {
-        ("Add Account...", .addCodexAccount)
+        (L10n.string("menu.addAccount"), .addCodexAccount)
     }
 
     @MainActor
@@ -237,7 +243,7 @@ struct CodexProviderImplementation: ProviderImplementation {
         }
 
         entries.append(.submenu(
-            "System Account",
+            L10n.string("System Account"),
             MenuDescriptor.MenuActionSystemImage.systemAccount.rawValue,
             submenuItems))
     }

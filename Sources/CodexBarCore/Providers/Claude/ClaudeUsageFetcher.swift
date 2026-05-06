@@ -206,13 +206,13 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
     /// Creates a new ClaudeUsageFetcher.
     /// - Parameters:
     ///   - environment: Process environment (default: current process environment)
-    ///   - dataSource: Usage data source (default: OAuth API).
+    ///   - dataSource: Usage data source (default: automatic CLI resolution).
     ///   - useWebExtras: If true, attempts to enrich usage with Claude web data (cookies).
     public init(
         browserDetection: BrowserDetection,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         runtime: ProviderRuntime = .app,
-        dataSource: ClaudeUsageDataSource = .oauth,
+        dataSource: ClaudeUsageDataSource = .auto,
         oauthKeychainPromptCooldownEnabled: Bool = false,
         allowBackgroundDelegatedRefresh: Bool = false,
         allowStartupBootstrapPrompt: Bool = false,
@@ -438,15 +438,9 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
 
         func loadLatestUsage(model: String) async throws -> ClaudeUsageSnapshot {
             switch self.fetcher.dataSource {
-            case .auto:
+            case .auto, .oauth, .web:
                 return try await self.executeAuto(model: model)
-            case .oauth:
-                var snapshot = try await self.fetcher.loadViaOAuth(allowDelegatedRetry: true)
-                snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
-                return snapshot
-            case .web:
-                return try await self.fetcher.loadViaWebAPI()
-            case .cli:
+            case .cli, .log:
                 do {
                     var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                     snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
@@ -485,23 +479,14 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
         }
 
         private func makeAutoFetchPlan() async -> ClaudeFetchPlan {
-            let hasWebSession =
-                if let header = self.fetcher.manualCookieHeader {
-                    ClaudeWebAPIFetcher.hasSessionKey(cookieHeader: header)
-                } else {
-                    ClaudeWebAPIFetcher.hasSessionKey(browserDetection: self.fetcher.browserDetection)
-                }
             let hasCLI = ClaudeCLIResolver.isAvailable(environment: self.fetcher.environment)
             return ClaudeSourcePlanner.resolve(input: ClaudeSourcePlanningInput(
                 runtime: self.fetcher.runtime,
                 selectedDataSource: .auto,
                 webExtrasEnabled: self.fetcher.useWebExtras,
-                hasWebSession: hasWebSession,
+                hasWebSession: false,
                 hasCLI: hasCLI,
-                hasOAuthCredentials: ClaudeOAuthPlanningAvailability.isAvailable(
-                    runtime: self.fetcher.runtime,
-                    sourceMode: .auto,
-                    environment: self.fetcher.environment)))
+                hasOAuthCredentials: false))
         }
 
         private func logAutoPlan(_ plan: ClaudeFetchPlan) {
@@ -521,13 +506,11 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
 
         private func execute(step: ClaudeFetchPlanStep, model: String) async throws -> ClaudeUsageSnapshot {
             switch step.dataSource {
-            case .oauth:
-                var snapshot = try await self.fetcher.loadViaOAuth(allowDelegatedRetry: true)
+            case .cli:
+                var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                 snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
                 return snapshot
-            case .web:
-                return try await self.fetcher.loadViaWebAPI()
-            case .cli:
+            case .log, .oauth, .web:
                 var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                 snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
                 return snapshot
@@ -1058,41 +1041,7 @@ extension ClaudeUsageFetcher {
     }
 
     private func applyWebExtrasIfNeeded(to snapshot: ClaudeUsageSnapshot) async -> ClaudeUsageSnapshot {
-        guard self.useWebExtras, self.dataSource != .web else { return snapshot }
-        do {
-            let webData: ClaudeWebAPIFetcher.WebUsageData =
-                if let header = self.manualCookieHeader {
-                    try await ClaudeWebAPIFetcher.fetchUsage(cookieHeader: header) { msg in
-                        Self.log.debug(msg)
-                    }
-                } else {
-                    try await ClaudeWebAPIFetcher.fetchUsage(
-                        browserDetection: self.browserDetection)
-                    { msg in
-                        Self.log.debug(msg)
-                    }
-                }
-            // Only merge usage/cost extras; keep identity fields from the primary data source.
-            let mergedExtraRateWindows = snapshot.extraRateWindows.isEmpty ? webData.extraRateWindows : snapshot
-                .extraRateWindows
-            let mergedProviderCost = snapshot.providerCost ?? webData.extraUsageCost
-            if mergedProviderCost != snapshot.providerCost || mergedExtraRateWindows != snapshot.extraRateWindows {
-                return ClaudeUsageSnapshot(
-                    primary: snapshot.primary,
-                    secondary: snapshot.secondary,
-                    opus: snapshot.opus,
-                    extraRateWindows: mergedExtraRateWindows,
-                    providerCost: mergedProviderCost,
-                    updatedAt: snapshot.updatedAt,
-                    accountEmail: snapshot.accountEmail,
-                    accountOrganization: snapshot.accountOrganization,
-                    loginMethod: snapshot.loginMethod,
-                    rawText: snapshot.rawText)
-            }
-        } catch {
-            Self.log.debug("Claude web extras fetch failed: \(error.localizedDescription)")
-        }
-        return snapshot
+        snapshot
     }
 
     // MARK: - Process helpers

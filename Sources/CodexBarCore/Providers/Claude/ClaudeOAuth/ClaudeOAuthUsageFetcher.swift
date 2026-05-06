@@ -31,48 +31,11 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
 }
 
 enum ClaudeOAuthUsageFetcher {
-    private static let baseURL = "https://api.anthropic.com"
-    private static let usagePath = "/api/oauth/usage"
-    private static let betaHeader = "oauth-2025-04-20"
     private static let fallbackClaudeCodeVersion = "2.1.0"
 
     static func fetchUsage(accessToken: String) async throws -> OAuthUsageResponse {
-        guard let url = URL(string: baseURL + usagePath) else {
-            throw ClaudeOAuthFetchError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 30
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // OAuth usage endpoint currently requires the beta header.
-        request.setValue(Self.betaHeader, forHTTPHeaderField: "anthropic-beta")
-        request.setValue(Self.claudeCodeUserAgent(), forHTTPHeaderField: "User-Agent")
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw ClaudeOAuthFetchError.invalidResponse
-            }
-            switch http.statusCode {
-            case 200:
-                return try Self.decodeUsageResponse(data)
-            case 401:
-                throw ClaudeOAuthFetchError.unauthorized
-            case 403:
-                let body = String(data: data, encoding: .utf8)
-                throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
-            default:
-                let body = String(data: data, encoding: .utf8)
-                throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
-            }
-        } catch let error as ClaudeOAuthFetchError {
-            throw error
-        } catch {
-            throw ClaudeOAuthFetchError.networkError(error)
-        }
+        _ = accessToken
+        throw ClaudeOAuthFetchError.serverError(410, "Claude OAuth usage fetch is disabled.")
     }
 
     static func decodeUsageResponse(_ data: Data) throws -> OAuthUsageResponse {

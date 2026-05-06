@@ -2,6 +2,7 @@ import Foundation
 
 struct SettingsDefaultsState {
     var refreshFrequency: RefreshFrequency
+    var appLanguageRaw: String?
     var launchAtLogin: Bool
     var debugMenuEnabled: Bool
     var debugDisableKeychainAccess: Bool
@@ -10,10 +11,18 @@ struct SettingsDefaultsState {
     var debugLoadingPatternRaw: String?
     var debugKeepCLISessionsAlive: Bool
     var statusChecksEnabled: Bool
+    var loginNotificationsEnabled: Bool
+    var augmentSessionExpiredNotificationsEnabled: Bool
     var sessionQuotaNotificationsEnabled: Bool
+    var sessionQuotaThresholdNotificationsEnabled: Bool
+    var sessionQuotaUsageThresholdsRaw: [Int]
+    var weeklyLimitThresholdNotificationsEnabled: Bool
+    var weeklyLimitRecoveryNotificationsEnabled: Bool
+    var weeklyLimitUsageThresholdsRaw: [Int]
     var usageBarsShowUsed: Bool
     var resetTimesShowAbsolute: Bool
     var menuBarShowsBrandIconWithPercent: Bool
+    var menuBarUsageDisplayStyleRaw: String?
     var menuBarDisplayModeRaw: String?
     var historicalTrackingEnabled: Bool
     var showAllTokenAccountsInMenu: Bool

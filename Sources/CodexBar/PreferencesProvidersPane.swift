@@ -99,7 +99,7 @@ struct ProvidersPane: View {
                         }
                     })
             } else {
-                Text("Select a provider")
+                Text(L10n.string("Select a provider"))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
@@ -127,7 +127,7 @@ struct ProvidersPane: View {
                         active.onConfirm()
                         self.activeConfirmation = nil
                     }
-                    Button("Cancel", role: .cancel) { self.activeConfirmation = nil }
+                    Button(L10n.string("Cancel"), role: .cancel) { self.activeConfirmation = nil }
                 }
             },
             message: {
@@ -176,9 +176,9 @@ struct ProvidersPane: View {
             let relative = snapshot.updatedAt.relativeDescription()
             usageText = relative
         } else if self.store.isStale(provider: provider) {
-            usageText = "last fetch failed"
+            usageText = L10n.string("last fetch failed")
         } else {
-            usageText = "usage not fetched yet"
+            usageText = L10n.string("usage not fetched yet")
         }
 
         let presentationContext = ProviderPresentationContext(
@@ -199,8 +199,7 @@ struct ProvidersPane: View {
         let projection = self.settings.codexVisibleAccountProjection
         let degradedNotice: CodexAccountsSectionNotice? = if projection.hasUnreadableAddedAccountStore {
             CodexAccountsSectionNotice(
-                text: "Managed account storage is unreadable. Live account access is still available, "
-                    + "but managed add, re-auth, and remove actions are disabled until the store is recoverable.",
+                text: L10n.string("Managed account storage unreadable notice"),
                 tone: .warning)
         } else {
             nil
@@ -303,9 +302,9 @@ struct ProvidersPane: View {
     func requestManagedCodexAccountRemoval(_ account: CodexVisibleAccount) {
         guard let accountID = account.storedAccountID else { return }
         self.activeConfirmation = ProviderSettingsConfirmationState(
-            title: "Remove Codex account?",
-            message: "Remove \(account.email) from CodexBar? Its managed Codex home will be deleted.",
-            confirmTitle: "Remove",
+            title: L10n.string("Remove Codex account?"),
+            message: L10n.string("Remove Codex account message format", account.email),
+            confirmTitle: L10n.string("Remove"),
             onConfirm: {
                 Task { @MainActor in
                     await self.removeManagedCodexAccount(id: accountID)
@@ -390,7 +389,7 @@ struct ProvidersPane: View {
                     }
                 }
             },
-            primaryAddActionTitle: provider == .copilot ? "Add Account" : nil,
+            primaryAddActionTitle: provider == .copilot ? L10n.string("Add Account") : nil,
             primaryAddAction: provider == .copilot ? {
                 await CopilotLoginFlow.run(settings: self.settings)
                 await ProviderInteractionContext.$current.withValue(.userInitiated) {
@@ -454,22 +453,28 @@ struct ProvidersPane: View {
         let options: [ProviderSettingsPickerOption]
         if provider == .openrouter {
             options = [
-                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+                ProviderSettingsPickerOption(
+                    id: MenuBarMetricPreference.automatic.rawValue,
+                    title: L10n.string("Automatic")),
                 ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.primary.rawValue,
-                    title: "Primary (API key limit)"),
+                    title: L10n.string("Primary API key limit")),
             ]
         } else if provider == .deepseek {
             options = [
-                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+                ProviderSettingsPickerOption(
+                    id: MenuBarMetricPreference.automatic.rawValue,
+                    title: L10n.string("Automatic")),
             ]
         } else if provider == .abacus {
             let metadata = self.store.metadata(for: provider)
             options = [
-                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+                ProviderSettingsPickerOption(
+                    id: MenuBarMetricPreference.automatic.rawValue,
+                    title: L10n.string("Automatic")),
                 ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.primary.rawValue,
-                    title: "Primary (\(metadata.sessionLabel))"),
+                    title: L10n.string("Primary format", L10n.metricLabel(metadata.sessionLabel))),
             ]
         } else {
             let metadata = self.store.metadata(for: provider)
@@ -478,38 +483,43 @@ struct ProvidersPane: View {
             let supportsTertiary = self.settings.menuBarMetricSupportsTertiary(for: provider, snapshot: snapshot)
             let supportsExtraUsage = self.settings.menuBarMetricSupportsExtraUsage(for: provider, snapshot: snapshot)
             var metricOptions: [ProviderSettingsPickerOption] = [
-                ProviderSettingsPickerOption(id: MenuBarMetricPreference.automatic.rawValue, title: "Automatic"),
+                ProviderSettingsPickerOption(
+                    id: MenuBarMetricPreference.automatic.rawValue,
+                    title: L10n.string("Automatic")),
                 ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.primary.rawValue,
-                    title: "Primary (\(metadata.sessionLabel))"),
+                    title: L10n.string("Primary format", L10n.metricLabel(metadata.sessionLabel))),
                 ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.secondary.rawValue,
-                    title: "Secondary (\(metadata.weeklyLabel))"),
+                    title: L10n.string("Secondary format", L10n.metricLabel(metadata.weeklyLabel))),
             ]
             if supportsTertiary {
-                let tertiaryTitle = metadata.opusLabel ?? MenuBarMetricPreference.tertiary.label
+                let tertiaryTitle = L10n.metricLabel(metadata.opusLabel ?? MenuBarMetricPreference.tertiary.label)
                 metricOptions.append(ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.tertiary.rawValue,
-                    title: "Tertiary (\(tertiaryTitle))"))
+                    title: L10n.string("Tertiary format", tertiaryTitle)))
             }
             if supportsExtraUsage {
                 metricOptions.append(ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.extraUsage.rawValue,
-                    title: MenuBarMetricPreference.extraUsage.label))
+                    title: L10n.string(MenuBarMetricPreference.extraUsage.label)))
             }
             if supportsAverage {
                 metricOptions.append(ProviderSettingsPickerOption(
                     id: MenuBarMetricPreference.average.rawValue,
-                    title: "Average (\(metadata.sessionLabel) + \(metadata.weeklyLabel))"))
+                    title: L10n.string(
+                        "Average format",
+                        L10n.metricLabel(metadata.sessionLabel),
+                        L10n.metricLabel(metadata.weeklyLabel))))
             }
             options = metricOptions
         }
         return ProviderSettingsPickerDescriptor(
             id: "menuBarMetric",
-            title: "Menu bar metric",
+            title: L10n.string("Menu bar metric"),
             subtitle: provider == .deepseek
-                ? "Shows the DeepSeek balance in the menu bar."
-                : "Choose which window drives the menu bar percent.",
+                ? L10n.string("Shows the DeepSeek balance in the menu bar.")
+                : L10n.string("Choose which window drives the menu bar percent."),
             binding: Binding(
                 get: {
                     self.settings
@@ -613,22 +623,20 @@ struct ProvidersPane: View {
            error == .authenticationInProgress
         {
             return CodexAccountsSectionNotice(
-                text: "A managed Codex login is already running. Wait for it to finish before adding "
-                    + "or re-authenticating another account.",
+                text: L10n.string("Managed Codex login already running notice"),
                 tone: .warning)
         }
 
         if let error = error as? ManagedCodexAccountServiceError {
             let message = switch error {
             case .loginFailed:
-                "Managed Codex login did not complete. Try again after finishing the browser login flow."
+                L10n.string("Managed Codex login did not complete notice")
             case .missingEmail:
-                "Codex login completed, but no account email was available. Try again after confirming "
-                    + "the account is fully signed in."
+                L10n.string("Codex login missing email notice")
             case .workspaceSelectionCancelled:
-                "CodexBar found multiple workspaces, but no workspace was selected."
+                L10n.string("Codex workspace selection cancelled notice")
             case let .unsafeManagedHome(path):
-                "CodexBar refused to modify an unexpected managed home path: \(path)"
+                L10n.string("Codex unsafe managed home notice format", path)
             }
             return CodexAccountsSectionNotice(text: message, tone: .warning)
         }

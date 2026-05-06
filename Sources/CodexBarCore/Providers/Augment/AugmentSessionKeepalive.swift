@@ -31,6 +31,7 @@ public final class AugmentSessionKeepalive {
     private var lastSuccessfulRefresh: Date?
     private var isRefreshing = false
     private let logger: ((String) -> Void)?
+    private let notificationsEnabled: @MainActor @Sendable () -> Bool
     private var onSessionRecovered: (() async -> Void)?
 
     /// Track consecutive failures to stop retrying after too many failures
@@ -38,10 +39,34 @@ public final class AugmentSessionKeepalive {
     private let maxConsecutiveFailures = 3 // Stop after 3 failures
     private var hasGivenUp = false
 
+    public nonisolated static func safeCookieSummary(_ cookieHeader: String) -> String {
+        let names = CookieHeaderNormalizer.pairs(from: cookieHeader).map(\.name)
+        guard !names.isEmpty else { return "none" }
+        return names.joined(separator: ", ")
+    }
+
+    public nonisolated static func safeSetCookieSummary(_ setCookieHeader: String) -> String {
+        let names = setCookieHeader
+            .split(separator: ",")
+            .compactMap { cookie -> String? in
+                let nameValue = cookie.split(separator: ";", maxSplits: 1).first ?? cookie[...]
+                guard let equals = nameValue.firstIndex(of: "=") else { return nil }
+                let name = nameValue[..<equals].trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? nil : name
+            }
+        guard !names.isEmpty else { return "none" }
+        return names.joined(separator: ", ")
+    }
+
     // MARK: - Initialization
 
-    public init(logger: ((String) -> Void)? = nil, onSessionRecovered: (() async -> Void)? = nil) {
+    public init(
+        logger: ((String) -> Void)? = nil,
+        notificationsEnabled: @escaping @MainActor @Sendable () -> Bool = { true },
+        onSessionRecovered: (() async -> Void)? = nil)
+    {
         self.logger = logger
+        self.notificationsEnabled = notificationsEnabled
         self.onSessionRecovered = onSessionRecovered
     }
 
@@ -298,6 +323,10 @@ public final class AugmentSessionKeepalive {
     /// Notify the user that they need to log in to Augment
     private func notifyUserLoginRequired() {
         #if os(macOS)
+        guard self.notificationsEnabled() else {
+            self.log("📢 Augment session expired notification disabled")
+            return
+        }
         self.log("📢 Sending notification: Augment session expired")
 
         Task {
@@ -348,7 +377,7 @@ public final class AugmentSessionKeepalive {
         }
 
         self.log("🔄 Attempting session refresh...")
-        self.log("   Cookies being sent: \(cookieHeader.prefix(100))...")
+        self.log("   Cookie names being sent: \(Self.safeCookieSummary(cookieHeader))")
 
         // Try multiple endpoints - Augment might use different auth patterns
         let endpoints = [
@@ -382,7 +411,7 @@ public final class AugmentSessionKeepalive {
 
                 // Log Set-Cookie headers if present
                 if let setCookies = httpResponse.allHeaderFields["Set-Cookie"] as? String {
-                    self.log("   Set-Cookie headers received: \(setCookies.prefix(100))...")
+                    self.log("   Set-Cookie names received: \(Self.safeSetCookieSummary(setCookies))")
                 }
 
                 if httpResponse.statusCode == 200 {

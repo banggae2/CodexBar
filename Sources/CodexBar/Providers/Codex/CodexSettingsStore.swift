@@ -495,7 +495,7 @@ extension SettingsStore {
     private static func codexUsageDataSource(from source: ProviderSourceMode?) -> CodexUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto, .web, .api:
+        case .auto, .web, .log, .api:
             return .auto
         case .cli:
             return .cli

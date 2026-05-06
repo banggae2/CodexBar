@@ -9,6 +9,7 @@ public enum ProviderSourceMode: String, CaseIterable, Sendable, Codable {
     case auto
     case web
     case cli
+    case log
     case oauth
     case api
 

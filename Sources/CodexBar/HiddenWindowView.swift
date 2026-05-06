@@ -9,6 +9,7 @@ struct HiddenWindowView: View {
             .onReceive(NotificationCenter.default.publisher(for: .codexbarOpenSettings)) { _ in
                 Task { @MainActor in
                     self.openSettings()
+                    PreferencesWindowFocus.focusSettingsWindowDeferred()
                 }
             }
             .task {

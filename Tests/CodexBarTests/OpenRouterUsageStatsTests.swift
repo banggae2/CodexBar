@@ -100,7 +100,7 @@ struct OpenRouterUsageStatsTests {
         do {
             _ = try await OpenRouterUsageFetcher.fetchUsage(
                 apiKey: "sk-or-v1-test",
-                environment: ["OPENROUTER_API_URL": "https://openrouter.test/api/v1"])
+                environment: ["OPENROUTER_API_URL": "https://api.openrouter.ai/api/v1"])
             Issue.record("Expected OpenRouterUsageError.apiError")
         } catch let error as OpenRouterUsageError {
             guard case let .apiError(message) = error else {
@@ -143,7 +143,7 @@ struct OpenRouterUsageStatsTests {
         let usage = try await OpenRouterUsageFetcher.fetchUsage(
             apiKey: "sk-or-v1-test",
             environment: [
-                "OPENROUTER_API_URL": "https://openrouter.test/api/v1",
+                "OPENROUTER_API_URL": "https://api.openrouter.ai/api/v1",
                 "OPENROUTER_HTTP_REFERER": " https://codexbar.example ",
                 "OPENROUTER_X_TITLE": "CodexBar QA",
             ])
@@ -183,7 +183,7 @@ struct OpenRouterUsageStatsTests {
 
         let usage = try await OpenRouterUsageFetcher.fetchUsage(
             apiKey: "sk-or-v1-test",
-            environment: ["OPENROUTER_API_URL": "https://openrouter.test/api/v1"])
+            environment: ["OPENROUTER_API_URL": "https://api.openrouter.ai/api/v1"])
 
         #expect(!usage.keyDataFetched)
         #expect(usage.keyQuotaStatus == .unavailable)
@@ -229,7 +229,7 @@ final class OpenRouterStubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override static func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "openrouter.test"
+        request.url?.host == "api.openrouter.ai"
     }
 
     override static func canonicalRequest(for request: URLRequest) -> URLRequest {

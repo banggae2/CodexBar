@@ -42,14 +42,14 @@ struct ZaiProviderImplementation: ProviderImplementation {
                 context.settings.zaiAPIRegion = ZaiAPIRegion(rawValue: raw) ?? .global
             })
         let options = ZaiAPIRegion.allCases.map {
-            ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
+            ProviderSettingsPickerOption(id: $0.rawValue, title: L10n.optionLabel($0.displayName))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "zai-api-region",
-                title: "API region",
-                subtitle: "Use BigModel for the China mainland endpoints (open.bigmodel.cn).",
+                title: L10n.string("API region"),
+                subtitle: L10n.string("Use BigModel for the China mainland endpoints (open.bigmodel.cn)."),
                 binding: binding,
                 options: options,
                 isVisible: nil,

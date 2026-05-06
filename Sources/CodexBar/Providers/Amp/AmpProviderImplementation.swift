@@ -34,16 +34,16 @@ struct AmpProviderImplementation: ProviderImplementation {
             ProviderCookieSourceUI.subtitle(
                 source: context.settings.ampCookieSource,
                 keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies.",
-                manual: "Paste a Cookie header or cURL capture from Amp settings.",
-                off: "Amp cookies are disabled.")
+                auto: L10n.string("Automatic imports browser cookies."),
+                manual: L10n.string("Paste a Cookie header or cURL capture from Amp settings."),
+                off: L10n.string("Amp cookies are disabled."))
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "amp-cookie-source",
-                title: "Cookie source",
-                subtitle: "Automatic imports browser cookies.",
+                title: L10n.string("Cookie source"),
+                subtitle: L10n.string("Automatic imports browser cookies."),
                 dynamicSubtitle: cookieSubtitle,
                 binding: cookieBinding,
                 options: cookieOptions,
@@ -65,7 +65,7 @@ struct AmpProviderImplementation: ProviderImplementation {
                 actions: [
                     ProviderSettingsActionDescriptor(
                         id: "amp-open-settings",
-                        title: "Open Amp Settings",
+                        title: L10n.string("Open Amp Settings"),
                         style: .link,
                         isVisible: nil,
                         perform: {

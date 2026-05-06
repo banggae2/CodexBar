@@ -656,10 +656,10 @@ struct AlibabaCodingPlanRegionTests {
     }
 
     @Test
-    func `quota url override beats host`() {
+    func `unsafe quota url override is ignored`() {
         let env = [AlibabaCodingPlanSettingsReader.quotaURLKey: "https://example.com/custom/quota"]
         let url = AlibabaCodingPlanUsageFetcher.resolveQuotaURL(region: .international, environment: env)
-        #expect(url.absoluteString == "https://example.com/custom/quota")
+        #expect(url == AlibabaCodingPlanAPIRegion.international.quotaURL)
     }
 }
 
@@ -684,7 +684,8 @@ struct AlibabaCodingPlanUsageFetcherRequestTests {
             _ = try await AlibabaCodingPlanUsageFetcher.fetchUsage(
                 apiKey: "cpk-test",
                 region: .chinaMainland,
-                environment: [AlibabaCodingPlanSettingsReader.quotaURLKey: "https://alibaba-api.test/data/api.json"])
+                environment: [AlibabaCodingPlanSettingsReader
+                    .quotaURLKey: "https://alibaba-api.alibabacloud.com/data/api.json"])
         }
     }
 
@@ -756,7 +757,7 @@ struct AlibabaCodingPlanUsageFetcherRequestTests {
 
         AlibabaConsoleSECTokenStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
-            #expect(url.host == "alibaba-proxy.test")
+            #expect(url.host == "alibaba-proxy.alibabacloud.com")
 
             if request.httpMethod == "GET", url.path == AlibabaCodingPlanAPIRegion.international.dashboardURL.path {
                 return Self.makeResponse(url: url, body: "<html></html>", statusCode: 200)
@@ -796,7 +797,7 @@ struct AlibabaCodingPlanUsageFetcherRequestTests {
         let snapshot = try await AlibabaCodingPlanUsageFetcher.fetchUsage(
             cookieHeader: "sec_token=cookie-sec-token; login_aliyunid_ticket=ticket; login_aliyunid_pk=user",
             region: .international,
-            environment: [AlibabaCodingPlanSettingsReader.hostKey: "https://alibaba-proxy.test"],
+            environment: [AlibabaCodingPlanSettingsReader.hostKey: "https://alibaba-proxy.alibabacloud.com"],
             now: Date(timeIntervalSince1970: 1_700_000_000))
 
         #expect(snapshot.planName == "Alibaba Coding Plan Pro")
@@ -922,7 +923,7 @@ final class AlibabaUsageFetcherStubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override static func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "alibaba-api.test"
+        request.url?.host == "alibaba-api.alibabacloud.com"
     }
 
     override static func canonicalRequest(for request: URLRequest) -> URLRequest {
@@ -954,7 +955,7 @@ final class AlibabaConsoleSECTokenStubURLProtocol: URLProtocol {
     override static func canInit(with request: URLRequest) -> Bool {
         guard let host = request.url?.host else { return false }
         return [
-            "alibaba-proxy.test",
+            "alibaba-proxy.alibabacloud.com",
             "modelstudio.console.alibabacloud.com",
             "bailian-singapore-cs.alibabacloud.com",
             "bailian.console.aliyun.com",

@@ -13,40 +13,64 @@ struct DisplayPane: View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 16) {
                 SettingsSection(contentSpacing: 12) {
-                    Text("Menu bar")
+                    Text(L10n.string("Menu bar"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                     PreferenceToggleRow(
-                        title: "Merge Icons",
-                        subtitle: "Use a single menu bar icon with a provider switcher.",
+                        title: L10n.string("Merge Icons"),
+                        subtitle: L10n.string("Use a single menu bar icon with a provider switcher."),
                         binding: self.$settings.mergeIcons)
                     PreferenceToggleRow(
-                        title: "Switcher shows icons",
-                        subtitle: "Show provider icons in the switcher (otherwise show a weekly progress line).",
+                        title: L10n.string("Switcher shows icons"),
+                        subtitle: L10n.string(
+                            "Show provider icons in the switcher (otherwise show a weekly progress line)."),
                         binding: self.$settings.switcherShowsIcons)
                         .disabled(!self.settings.mergeIcons)
                         .opacity(self.settings.mergeIcons ? 1 : 0.5)
                     PreferenceToggleRow(
-                        title: "Show most-used provider",
-                        subtitle: "Menu bar auto-shows the provider closest to its rate limit.",
+                        title: L10n.string("Show most-used provider"),
+                        subtitle: L10n.string("Menu bar auto-shows the provider closest to its rate limit."),
                         binding: self.$settings.menuBarShowsHighestUsage)
                         .disabled(!self.settings.mergeIcons)
                         .opacity(self.settings.mergeIcons ? 1 : 0.5)
                     PreferenceToggleRow(
-                        title: "Menu bar shows percent",
-                        subtitle: "Replace critter bars with provider branding icons and a percentage.",
+                        title: L10n.string("Menu bar usage display"),
+                        subtitle: L10n.string("Show provider usage directly in the menu bar."),
                         binding: self.$settings.menuBarShowsBrandIconWithPercent)
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Display mode")
+                            Text(L10n.string("Usage display style"))
                                 .font(.body)
-                            Text("Choose what to show in the menu bar (Pace shows usage vs. expected).")
+                            Text(L10n.string("Choose how usage appears in the menu bar."))
                                 .font(.footnote)
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Picker("Display mode", selection: self.$settings.menuBarDisplayMode) {
+                        Picker(
+                            L10n.string("Usage display style"),
+                            selection: self.$settings.menuBarUsageDisplayStyle)
+                        {
+                            ForEach(MenuBarUsageDisplayStyle.allCases) { style in
+                                Text(style.label).tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 220)
+                    }
+                    .disabled(!self.settings.menuBarShowsBrandIconWithPercent)
+                    .opacity(self.settings.menuBarShowsBrandIconWithPercent ? 1 : 0.5)
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.string("Display mode"))
+                                .font(.body)
+                            Text(L10n.string("Choose what to show in the menu bar (Pace shows usage vs. expected)."))
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        Picker(L10n.string("Display mode"), selection: self.$settings.menuBarDisplayMode) {
                             ForEach(MenuBarDisplayMode.allCases) { mode in
                                 Text(mode.label).tag(mode)
                             }
@@ -55,32 +79,40 @@ struct DisplayPane: View {
                         .pickerStyle(.menu)
                         .frame(maxWidth: 200)
                     }
-                    .disabled(!self.settings.menuBarShowsBrandIconWithPercent)
-                    .opacity(self.settings.menuBarShowsBrandIconWithPercent ? 1 : 0.5)
+                    .disabled(
+                        !self.settings.menuBarShowsBrandIconWithPercent ||
+                            self.settings.menuBarUsageDisplayStyle != .iconPercent)
+                    .opacity(
+                        self.settings.menuBarShowsBrandIconWithPercent &&
+                            self.settings.menuBarUsageDisplayStyle == .iconPercent
+                            ? 1
+                            : 0.5)
                 }
 
                 Divider()
 
                 SettingsSection(contentSpacing: 12) {
-                    Text("Menu content")
+                    Text(L10n.string("Menu content"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                     PreferenceToggleRow(
-                        title: "Show usage as used",
-                        subtitle: "Progress bars fill as you consume quota (instead of showing remaining).",
+                        title: L10n.string("Show usage as used"),
+                        subtitle: L10n.string(
+                            "Progress bars fill as you consume quota (instead of showing remaining)."),
                         binding: self.$settings.usageBarsShowUsed)
                     PreferenceToggleRow(
-                        title: "Show reset time as clock",
-                        subtitle: "Display reset times as absolute clock values instead of countdowns.",
+                        title: L10n.string("Show reset time as clock"),
+                        subtitle: L10n.string("Display reset times as absolute clock values instead of countdowns."),
                         binding: self.$settings.resetTimesShowAbsolute)
                     PreferenceToggleRow(
-                        title: "Show credits + extra usage",
-                        subtitle: "Show Codex Credits and Claude Extra usage sections in the menu.",
+                        title: L10n.string("Show credits + extra usage"),
+                        subtitle: L10n.string("Show Codex Credits and Claude Extra usage sections in the menu."),
                         binding: self.$settings.showOptionalCreditsAndExtraUsage)
                     PreferenceToggleRow(
-                        title: "Show all token accounts",
-                        subtitle: "Stack token accounts in the menu (otherwise show an account switcher bar).",
+                        title: L10n.string("Show all token accounts"),
+                        subtitle: L10n.string(
+                            "Stack token accounts in the menu (otherwise show an account switcher bar)."),
                         binding: self.$settings.showAllTokenAccountsInMenu)
                     self.overviewProviderSelector
                 }
@@ -110,11 +142,11 @@ struct DisplayPane: View {
     private var overviewProviderSelector: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 12) {
-                Text("Overview tab providers")
+                Text(L10n.string("Overview tab providers"))
                     .font(.body)
                 Spacer(minLength: 0)
                 if self.showsOverviewConfigureButton {
-                    Button("Configure…") {
+                    Button(L10n.string("Configure…")) {
                         self.isOverviewProviderPopoverPresented = true
                     }
                     .offset(y: 1)
@@ -125,11 +157,11 @@ struct DisplayPane: View {
             }
 
             if !self.settings.mergeIcons {
-                Text("Enable Merge Icons to configure Overview tab providers.")
+                Text(L10n.string("Enable Merge Icons to configure Overview tab providers."))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             } else if self.activeProvidersInOrder.isEmpty {
-                Text("No enabled providers available for Overview.")
+                Text(L10n.string("No enabled providers available for Overview."))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
             } else {
@@ -144,9 +176,9 @@ struct DisplayPane: View {
 
     private var overviewProviderPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Choose up to \(Self.maxOverviewProviders) providers")
+            Text(L10n.string("Choose up to %lld providers", Self.maxOverviewProviders))
                 .font(.headline)
-            Text("Overview rows always follow provider order.")
+            Text(L10n.string("Overview rows always follow provider order."))
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
 
@@ -191,7 +223,7 @@ struct DisplayPane: View {
 
     private var overviewProviderSelectionSummary: String {
         let selectedNames = self.overviewSelectedProviders.map(self.providerDisplayName)
-        guard !selectedNames.isEmpty else { return "No providers selected" }
+        guard !selectedNames.isEmpty else { return L10n.string("No providers selected") }
         return selectedNames.joined(separator: ", ")
     }
 
