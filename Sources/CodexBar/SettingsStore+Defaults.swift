@@ -13,6 +13,14 @@ extension SettingsStore {
         }
     }
 
+    var appLanguage: AppLanguage {
+        get { AppLanguage(rawValue: self.defaultsState.appLanguageRaw ?? "") ?? .system }
+        set {
+            self.defaultsState.appLanguageRaw = newValue.rawValue
+            self.userDefaults.set(newValue.rawValue, forKey: AppLanguage.userDefaultsKey)
+        }
+    }
+
     var launchAtLogin: Bool {
         get { self.defaultsState.launchAtLogin }
         set {
@@ -95,11 +103,71 @@ extension SettingsStore {
         }
     }
 
+    var loginNotificationsEnabled: Bool {
+        get { self.defaultsState.loginNotificationsEnabled }
+        set {
+            self.defaultsState.loginNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "loginNotificationsEnabled")
+        }
+    }
+
+    var augmentSessionExpiredNotificationsEnabled: Bool {
+        get { self.defaultsState.augmentSessionExpiredNotificationsEnabled }
+        set {
+            self.defaultsState.augmentSessionExpiredNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "augmentSessionExpiredNotificationsEnabled")
+        }
+    }
+
     var sessionQuotaNotificationsEnabled: Bool {
         get { self.defaultsState.sessionQuotaNotificationsEnabled }
         set {
             self.defaultsState.sessionQuotaNotificationsEnabled = newValue
             self.userDefaults.set(newValue, forKey: "sessionQuotaNotificationsEnabled")
+        }
+    }
+
+    var sessionQuotaThresholdNotificationsEnabled: Bool {
+        get { self.defaultsState.sessionQuotaThresholdNotificationsEnabled }
+        set {
+            self.defaultsState.sessionQuotaThresholdNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "sessionQuotaThresholdNotificationsEnabled")
+        }
+    }
+
+    var sessionQuotaUsageThresholds: [Int] {
+        get { self.defaultsState.sessionQuotaUsageThresholdsRaw }
+        set {
+            let normalized = SessionQuotaNotificationLogic.normalizedUsageThresholds(newValue)
+            let resolved = normalized.isEmpty ? SessionQuotaNotificationLogic.defaultUsageThresholds : normalized
+            self.defaultsState.sessionQuotaUsageThresholdsRaw = resolved
+            self.userDefaults.set(resolved, forKey: "sessionQuotaUsageThresholds")
+        }
+    }
+
+    var weeklyLimitThresholdNotificationsEnabled: Bool {
+        get { self.defaultsState.weeklyLimitThresholdNotificationsEnabled }
+        set {
+            self.defaultsState.weeklyLimitThresholdNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "weeklyLimitThresholdNotificationsEnabled")
+        }
+    }
+
+    var weeklyLimitRecoveryNotificationsEnabled: Bool {
+        get { self.defaultsState.weeklyLimitRecoveryNotificationsEnabled }
+        set {
+            self.defaultsState.weeklyLimitRecoveryNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "weeklyLimitRecoveryNotificationsEnabled")
+        }
+    }
+
+    var weeklyLimitUsageThresholds: [Int] {
+        get { self.defaultsState.weeklyLimitUsageThresholdsRaw }
+        set {
+            let normalized = SessionQuotaNotificationLogic.normalizedUsageThresholds(newValue)
+            let resolved = normalized.isEmpty ? SessionQuotaNotificationLogic.defaultUsageThresholds : normalized
+            self.defaultsState.weeklyLimitUsageThresholdsRaw = resolved
+            self.userDefaults.set(resolved, forKey: "weeklyLimitUsageThresholds")
         }
     }
 
@@ -125,6 +193,23 @@ extension SettingsStore {
             self.defaultsState.menuBarShowsBrandIconWithPercent = newValue
             self.userDefaults.set(newValue, forKey: "menuBarShowsBrandIconWithPercent")
         }
+    }
+
+    private var menuBarUsageDisplayStyleRaw: String? {
+        get { self.defaultsState.menuBarUsageDisplayStyleRaw }
+        set {
+            self.defaultsState.menuBarUsageDisplayStyleRaw = newValue
+            if let raw = newValue {
+                self.userDefaults.set(raw, forKey: "menuBarUsageDisplayStyle")
+            } else {
+                self.userDefaults.removeObject(forKey: "menuBarUsageDisplayStyle")
+            }
+        }
+    }
+
+    var menuBarUsageDisplayStyle: MenuBarUsageDisplayStyle {
+        get { MenuBarUsageDisplayStyle(rawValue: self.menuBarUsageDisplayStyleRaw ?? "") ?? .iconPercent }
+        set { self.menuBarUsageDisplayStyleRaw = newValue.rawValue }
     }
 
     private var menuBarDisplayModeRaw: String? {

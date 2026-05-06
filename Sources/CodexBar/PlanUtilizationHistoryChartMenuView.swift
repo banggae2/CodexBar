@@ -582,11 +582,11 @@ struct PlanUtilizationHistoryChartMenuView: View {
     {
         switch name {
         case .session:
-            metadata?.sessionLabel ?? "Session"
+            L10n.metricLabel(metadata?.sessionLabel ?? "Session")
         case .weekly:
-            metadata?.weeklyLabel ?? "Weekly"
+            L10n.metricLabel(metadata?.weeklyLabel ?? "Weekly")
         case .opus:
-            metadata?.opusLabel ?? "Opus"
+            L10n.metricLabel(metadata?.opusLabel ?? "Opus")
         default:
             self.fallbackTitle(for: name.rawValue)
         }
@@ -614,9 +614,9 @@ struct PlanUtilizationHistoryChartMenuView: View {
 
     private nonisolated static func emptyStateText(title: String?) -> String {
         if let title {
-            return "No \(title.lowercased()) utilization data yet."
+            return L10n.string("No utilization data for title format", title.lowercased())
         }
-        return "No utilization data yet."
+        return L10n.string("No utilization data yet.")
     }
 
     #if DEBUG

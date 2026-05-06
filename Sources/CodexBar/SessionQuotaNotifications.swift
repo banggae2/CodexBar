@@ -6,10 +6,14 @@ enum SessionQuotaTransition: Equatable {
     case none
     case depleted
     case restored
+    case usageThreshold(Int)
+    case weeklyUsageThreshold(Int)
+    case weeklyRestored
 }
 
 enum SessionQuotaNotificationLogic {
     static let depletedThreshold: Double = 0.0001
+    static let defaultUsageThresholds: [Int] = [25, 50, 75, 100]
 
     static func isDepleted(_ remaining: Double?) -> Bool {
         guard let remaining else { return false }
@@ -26,6 +30,26 @@ enum SessionQuotaNotificationLogic {
         if !wasDepleted, isDepleted { return .depleted }
         if wasDepleted, !isDepleted { return .restored }
         return .none
+    }
+
+    static func normalizedUsageThresholds(_ thresholds: [Int]) -> [Int] {
+        Array(Set(thresholds.filter { $0 > 0 && $0 <= 100 })).sorted()
+    }
+
+    static func crossedUsageThresholds(
+        previousUsed: Double?,
+        currentUsed: Double?,
+        thresholds: [Int],
+        alreadySent: Set<Int>) -> [Int]
+    {
+        guard let currentUsed else { return [] }
+        let normalized = self.normalizedUsageThresholds(thresholds)
+        return normalized.filter { threshold in
+            guard !alreadySent.contains(threshold) else { return false }
+            guard currentUsed >= Double(threshold) else { return false }
+            guard let previousUsed else { return true }
+            return previousUsed < Double(threshold)
+        }
     }
 }
 
@@ -49,9 +73,21 @@ final class SessionQuotaNotifier: SessionQuotaNotifying {
         case .none:
             ("", "")
         case .depleted:
-            ("\(providerName) session depleted", "0% left. Will notify when it's available again.")
+            (L10n.string("Session depleted title format", providerName), L10n.string("Session depleted body"))
         case .restored:
-            ("\(providerName) session restored", "Session quota is available again.")
+            (L10n.string("Session restored title format", providerName), L10n.string("Session restored body"))
+        case let .usageThreshold(threshold):
+            (
+                L10n.string("Session usage threshold title format", providerName, threshold),
+                L10n.string("Session usage threshold body format", threshold))
+        case let .weeklyUsageThreshold(threshold):
+            (
+                L10n.string("Weekly usage threshold title format", providerName, threshold),
+                L10n.string("Weekly usage threshold body format", threshold))
+        case .weeklyRestored:
+            (
+                L10n.string("Weekly limit restored title format", providerName),
+                L10n.string("Weekly limit restored body"))
         }
 
         let providerText = provider.rawValue

@@ -112,9 +112,8 @@ extension StatusItemController {
         }
         guard self.settings.hasUnreadableManagedCodexAccountStore == false else {
             self.presentLoginAlert(
-                title: "Managed Codex accounts unavailable",
-                message: "CodexBar could not read managed account storage. " +
-                    "Recover the store before adding another account.")
+                title: L10n.string("Managed Codex accounts unavailable"),
+                message: L10n.string("Managed Codex account storage unavailable notice"))
             return
         }
 
@@ -221,7 +220,7 @@ extension StatusItemController {
     private func openSettings(tab: PreferencesTab) {
         DispatchQueue.main.async {
             self.preferencesSelection.tab = tab
-            NSApp.activate(ignoringOtherApps: true)
+            PreferencesWindowFocus.openSettingsWindow()
             NotificationCenter.default.post(
                 name: .codexbarOpenSettings,
                 object: nil,
@@ -283,23 +282,24 @@ extension StatusItemController {
            error == .authenticationInProgress
         {
             info = LoginAlertInfo(
-                title: "Codex account login already running",
-                message: "Wait for the current managed Codex login to finish before adding another account.")
+                title: L10n.string("Codex account login already running"),
+                message: L10n.string("Wait for current managed Codex login notice"))
         } else if let error = error as? ManagedCodexAccountServiceError {
             let message = switch error {
             case .loginFailed:
-                "Managed Codex login did not complete. Try again after finishing the browser login flow."
+                L10n.string("Managed Codex login did not complete notice")
             case .missingEmail:
-                "Codex login completed, but no account email was available. " +
-                    "Try again after confirming the account is fully signed in."
+                L10n.string("Codex login missing email notice")
             case .workspaceSelectionCancelled:
-                "CodexBar found multiple workspaces, but no workspace was selected."
+                L10n.string("Codex workspace selection cancelled notice")
             case let .unsafeManagedHome(path):
-                "CodexBar refused to modify an unexpected managed home path: \(path)"
+                L10n.string("Codex unsafe managed home notice format", path)
             }
-            info = LoginAlertInfo(title: "Could not add Codex account", message: message)
+            info = LoginAlertInfo(title: L10n.string("Could not add Codex account"), message: message)
         } else {
-            info = LoginAlertInfo(title: "Could not add Codex account", message: error.localizedDescription)
+            info = LoginAlertInfo(
+                title: L10n.string("Could not add Codex account"),
+                message: error.localizedDescription)
         }
 
         self.presentLoginAlert(title: info.title, message: info.message)
@@ -311,18 +311,18 @@ extension StatusItemController {
             return
         case .missingBinary:
             self.presentLoginAlert(
-                title: "Claude CLI not found",
-                message: "Install the Claude CLI (npm i -g @anthropic-ai/claude-code) and try again.")
+                title: L10n.string("Claude CLI not found"),
+                message: L10n.string("Install the Claude CLI and try again."))
         case let .launchFailed(message):
-            self.presentLoginAlert(title: "Could not start claude /login", message: message)
+            self.presentLoginAlert(title: L10n.string("Could not start claude /login"), message: message)
         case .timedOut:
             self.presentLoginAlert(
-                title: "Claude login timed out",
+                title: L10n.string("Claude login timed out"),
                 message: self.trimmedLoginOutput(result.output))
         case let .failed(status):
-            let statusLine = "claude /login exited with status \(status)."
+            let statusLine = L10n.string("claude login exited with status format", status)
             let message = self.trimmedLoginOutput(result.output.isEmpty ? statusLine : result.output)
-            self.presentLoginAlert(title: "Claude login failed", message: message)
+            self.presentLoginAlert(title: L10n.string("Claude login failed"), message: message)
         }
     }
 
@@ -370,10 +370,10 @@ extension StatusItemController {
             nil
         case .missingBinary:
             LoginAlertInfo(
-                title: "Gemini CLI not found",
-                message: "Install the Gemini CLI (npm i -g @google/gemini-cli) and try again.")
+                title: L10n.string("Gemini CLI not found"),
+                message: L10n.string("Install the Gemini CLI and try again."))
         case let .launchFailed(message):
-            LoginAlertInfo(title: "Could not open Terminal for Gemini", message: message)
+            LoginAlertInfo(title: L10n.string("Could not open Terminal for Gemini"), message: message)
         }
     }
 
@@ -388,16 +388,17 @@ extension StatusItemController {
     private func trimmedLoginOutput(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let limit = 600
-        if trimmed.isEmpty { return "No output captured." }
+        if trimmed.isEmpty { return L10n.string("No output captured.") }
         if trimmed.count <= limit { return trimmed }
         let idx = trimmed.index(trimmed.startIndex, offsetBy: limit)
         return "\(trimmed[..<idx])…"
     }
 
     func postLoginNotification(for provider: UsageProvider) {
+        guard self.settings.loginNotificationsEnabled else { return }
         let name = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
-        let title = "\(name) login successful"
-        let body = "You can return to the app; authentication finished."
+        let title = L10n.string("Provider login successful format", name)
+        let body = L10n.string("Authentication finished notification body")
         AppNotifications.shared.post(idPrefix: "login-\(provider.rawValue)", title: title, body: body)
     }
 
@@ -409,7 +410,7 @@ extension StatusItemController {
             // User closed the window; no alert needed
             return
         case let .failed(message):
-            self.presentLoginAlert(title: "Cursor login failed", message: message)
+            self.presentLoginAlert(title: L10n.string("Cursor login failed"), message: message)
         }
     }
 
