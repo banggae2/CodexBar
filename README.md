@@ -1,3 +1,5 @@
+Language: [English](README.md) | [Korean(한국어)](README-ko.md)
+
 # CodexBar 🎚️ - May your tokens never run out.
 
 Tiny macOS 14+ menu bar app that keeps AI coding-provider limits visible and shows when each window resets. CodexBar supports Codex, Claude, Cursor, Gemini, Copilot, z.ai, Kiro, Vertex AI, Augment, OpenRouter, Codebuff, and many newer coding providers. One status item per provider (or Merge Icons mode with a provider switcher); enable what you use from Settings. No Dock icon, minimal UI, dynamic bar icons in the menu bar.
