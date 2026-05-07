@@ -58,7 +58,7 @@ struct MenuCardOptionalUsageModelTests {
     }
 
     @Test
-    func `claude model shows peak hours note when enabled`() throws {
+    func `claude model hides peak hours note when enabled`() throws {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = try #require(TimeZone(identifier: "America/New_York"))
         let now = try #require(cal.date(from: DateComponents(year: 2026, month: 3, day: 25, hour: 10)))
@@ -95,8 +95,7 @@ struct MenuCardOptionalUsageModelTests {
             claudePeakHoursEnabled: true,
             now: now))
 
-        #expect(model.usageNotes.count == 1)
-        #expect(model.usageNotes.first?.contains("Peak") == true)
+        #expect(model.usageNotes.isEmpty)
     }
 
     @Test

@@ -21,7 +21,8 @@ struct ClaudeProviderImplementation: ProviderImplementation {
     @MainActor
     func observeSettings(_ settings: SettingsStore) {
         _ = settings.claudeUsageDataSource
-        _ = settings.claudePeakHoursEnabled
+        // Claude Code peak-hours policy was retired; keep the stored preference inert.
+        // _ = settings.claudePeakHoursEnabled
     }
 
     @MainActor
@@ -57,23 +58,8 @@ struct ClaudeProviderImplementation: ProviderImplementation {
     @MainActor
     func settingsToggles(context: ProviderSettingsContext) -> [ProviderSettingsToggleDescriptor] {
         _ = context
-        let peakHoursBinding = Binding(
-            get: { context.settings.claudePeakHoursEnabled },
-            set: { context.settings.claudePeakHoursEnabled = $0 })
-
-        return [
-            ProviderSettingsToggleDescriptor(
-                id: "claude-peak-hours",
-                title: L10n.string("Show peak hours indicator"),
-                subtitle: L10n.string("Show whether Claude is in peak usage hours."),
-                binding: peakHoursBinding,
-                statusText: nil,
-                actions: [],
-                isVisible: nil,
-                onChange: nil,
-                onAppDidBecomeActive: nil,
-                onAppearWhenEnabled: nil),
-        ]
+        // Claude Code peak-hours policy was retired; do not expose the old toggle.
+        return []
     }
 
     @MainActor

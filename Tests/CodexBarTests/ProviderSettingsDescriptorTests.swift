@@ -211,6 +211,7 @@ struct ProviderSettingsDescriptorTests {
             setLastAppActiveRunAt: { _, _ in },
             requestConfirmation: { _ in })
         let pickers = ClaudeProviderImplementation().settingsPickers(context: context)
+        let toggles = ClaudeProviderImplementation().settingsToggles(context: context)
         let usagePicker = try #require(pickers.first(where: { $0.id == "claude-usage-source" }))
         let usageOptionIDs = Set(usagePicker.options.map(\.id))
         #expect(usageOptionIDs.contains(ClaudeUsageDataSource.auto.rawValue))
@@ -220,6 +221,7 @@ struct ProviderSettingsDescriptorTests {
         #expect(!usageOptionIDs.contains(ClaudeUsageDataSource.web.rawValue))
         #expect(!pickers.contains(where: { $0.id == "claude-cookie-source" }))
         #expect(!pickers.contains(where: { $0.id == "claude-keychain-prompt-policy" }))
+        #expect(!toggles.contains(where: { $0.id == "claude-peak-hours" }))
     }
 
     @Test

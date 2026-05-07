@@ -799,15 +799,7 @@ extension UsageMenuCardView.Model {
             return notes
         }
 
-        if input.provider == .claude, input.claudePeakHoursEnabled {
-            let peakStatus = ClaudePeakHours.status(at: input.now)
-            let duration = AppUsageFormatter.durationDescription(minutes: peakStatus.minutesUntilTransition)
-            return [
-                peakStatus.isPeak
-                    ? L10n.string("Claude peak ends format", duration)
-                    : L10n.string("Claude off peak starts format", duration),
-            ]
-        }
+        // Claude Code peak-hours policy was retired; keep the old preference inert for compatibility.
 
         guard input.provider == .openrouter,
               let openRouter = input.snapshot?.openRouterUsage
