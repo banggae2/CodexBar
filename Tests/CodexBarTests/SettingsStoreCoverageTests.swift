@@ -75,6 +75,23 @@ struct SettingsStoreCoverageTests {
 
         settings.resetTimesShowAbsolute = true
         #expect(settings.resetTimeDisplayStyle == .absolute)
+        settings.resetTimeDisplayStyle = .both
+        #expect(settings.resetTimeDisplayStyle == .both)
+    }
+
+    @Test
+    func `reset time display style migrates legacy absolute preference`() throws {
+        let suite = "SettingsStoreCoverageTests-reset-time-display-style-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(true, forKey: "resetTimesShowAbsolute")
+        let configStore = testConfigStore(suiteName: suite)
+
+        let settings = Self.makeSettingsStore(userDefaults: defaults, configStore: configStore)
+        #expect(settings.resetTimeDisplayStyle == .absolute)
+
+        settings.resetTimeDisplayStyle = .both
+        #expect(defaults.string(forKey: "resetTimeDisplayStyle") == ResetTimeDisplayStyle.both.rawValue)
     }
 
     @Test

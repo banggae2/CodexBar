@@ -80,6 +80,16 @@ struct UsageFormatterTests {
     }
 
     @Test
+    func `reset line can show countdown and absolute time together`() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let reset = now.addingTimeInterval(10 * 60 + 1)
+        let window = RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: reset, resetDescription: "Resets soon")
+        let text = UsageFormatter.resetLine(for: window, style: .both, now: now)
+        let absolute = UsageFormatter.resetDescription(from: reset, now: now)
+        #expect(text == "Resets in 11m (\(absolute))")
+    }
+
+    @Test
     func `reset line falls back to provided description`() {
         let window = RateWindow(
             usedPercent: 0,

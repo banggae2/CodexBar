@@ -135,6 +135,11 @@
 "Progress bars fill as you consume quota (instead of showing remaining)." = "Progress bars fill as you consume quota (instead of showing remaining).";
 "Show reset time as clock" = "Show reset time as clock";
 "Display reset times as absolute clock values instead of countdowns." = "Display reset times as absolute clock values instead of countdowns.";
+"Reset time display" = "Reset time display";
+"Choose how reset times appear in the menu." = "Choose how reset times appear in the menu.";
+"resetTimeDisplay.countdown" = "Show countdown";
+"resetTimeDisplay.absolute" = "Show reset time";
+"resetTimeDisplay.both" = "Show both";
 "Show credits + extra usage" = "Show credits + extra usage";
 "Show Codex Credits and Claude Extra usage sections in the menu." = "Show Codex Credits and Claude Extra usage sections in the menu.";
 "Show all token accounts" = "Show all token accounts";
@@ -478,6 +483,7 @@
 "Duration in days format" = "in %d day(s)";
 "Duration in days hours format" = "in %d day(s) %d hr";
 "Tomorrow time format" = "tomorrow, %@";
+"Reset combined format" = "%@ (%@)";
 "Resets format" = "Resets %@";
 "Updated just now" = "Updated just now";
 "Updated relative format" = "Updated %@";

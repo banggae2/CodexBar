@@ -160,9 +160,19 @@ extension CodexBarCLI {
             "com.steipete.codexbar.debug",
         ]
         for domain in domains {
+            if let raw = UserDefaults(suiteName: domain)?.string(forKey: "resetTimeDisplayStyle"),
+               let style = ResetTimeDisplayStyle(rawValue: raw)
+            {
+                return style
+            }
             if let value = UserDefaults(suiteName: domain)?.object(forKey: "resetTimesShowAbsolute") as? Bool {
                 return value ? .absolute : .countdown
             }
+        }
+        if let raw = UserDefaults.standard.string(forKey: "resetTimeDisplayStyle"),
+           let style = ResetTimeDisplayStyle(rawValue: raw)
+        {
+            return style
         }
         let fallback = UserDefaults.standard.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
         return fallback ? .absolute : .countdown

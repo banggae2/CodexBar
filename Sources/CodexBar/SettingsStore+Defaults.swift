@@ -180,10 +180,35 @@ extension SettingsStore {
     }
 
     var resetTimesShowAbsolute: Bool {
-        get { self.defaultsState.resetTimesShowAbsolute }
+        get { self.resetTimeDisplayStyle == .absolute }
         set {
             self.defaultsState.resetTimesShowAbsolute = newValue
             self.userDefaults.set(newValue, forKey: "resetTimesShowAbsolute")
+            self.resetTimeDisplayStyleRaw = newValue
+                ? ResetTimeDisplayStyle.absolute.rawValue
+                : ResetTimeDisplayStyle.countdown.rawValue
+        }
+    }
+
+    private var resetTimeDisplayStyleRaw: String? {
+        get { self.defaultsState.resetTimeDisplayStyleRaw }
+        set {
+            self.defaultsState.resetTimeDisplayStyleRaw = newValue
+            if let raw = newValue {
+                self.userDefaults.set(raw, forKey: "resetTimeDisplayStyle")
+            } else {
+                self.userDefaults.removeObject(forKey: "resetTimeDisplayStyle")
+            }
+        }
+    }
+
+    var resetTimeDisplayStyle: ResetTimeDisplayStyle {
+        get { ResetTimeDisplayStyle(rawValue: self.resetTimeDisplayStyleRaw ?? "") ?? .countdown }
+        set {
+            self.resetTimeDisplayStyleRaw = newValue.rawValue
+            let legacyAbsolute = newValue == .absolute
+            self.defaultsState.resetTimesShowAbsolute = legacyAbsolute
+            self.userDefaults.set(legacyAbsolute, forKey: "resetTimesShowAbsolute")
         }
     }
 

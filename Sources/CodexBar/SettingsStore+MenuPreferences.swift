@@ -92,8 +92,4 @@ extension SettingsStore {
         self.costUsageEnabled
             && ProviderDescriptorRegistry.descriptor(for: provider).tokenCost.supportsTokenCost
     }
-
-    var resetTimeDisplayStyle: ResetTimeDisplayStyle {
-        self.resetTimesShowAbsolute ? .absolute : .countdown
-    }
 }

@@ -305,6 +305,16 @@ extension SettingsStore {
             key: "weeklyLimitUsageThresholds")
         let usageBarsShowUsed = userDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let resetTimesShowAbsolute = userDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
+        let resetTimeDisplayStyleRaw = {
+            if let raw = userDefaults.string(forKey: "resetTimeDisplayStyle"),
+               ResetTimeDisplayStyle(rawValue: raw) != nil
+            {
+                return raw
+            }
+            return resetTimesShowAbsolute
+                ? ResetTimeDisplayStyle.absolute.rawValue
+                : ResetTimeDisplayStyle.countdown.rawValue
+        }()
         let menuBarShowsBrandIconWithPercent = userDefaults.object(
             forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? false
         let menuBarUsageDisplayStyleRaw = userDefaults.string(forKey: "menuBarUsageDisplayStyle")
@@ -377,6 +387,7 @@ extension SettingsStore {
             weeklyLimitUsageThresholdsRaw: resolvedWeeklyLimitUsageThresholds,
             usageBarsShowUsed: usageBarsShowUsed,
             resetTimesShowAbsolute: resetTimesShowAbsolute,
+            resetTimeDisplayStyleRaw: resetTimeDisplayStyleRaw,
             menuBarShowsBrandIconWithPercent: menuBarShowsBrandIconWithPercent,
             menuBarUsageDisplayStyleRaw: menuBarUsageDisplayStyleRaw,
             menuBarDisplayModeRaw: menuBarDisplayModeRaw,

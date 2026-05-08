@@ -135,6 +135,11 @@
 "Progress bars fill as you consume quota (instead of showing remaining)." = "남은 양 대신 할당량을 사용할수록 진행 막대가 채워집니다.";
 "Show reset time as clock" = "초기화 시간을 시각으로 표시";
 "Display reset times as absolute clock values instead of countdowns." = "초기화 시간을 카운트다운 대신 절대 시각으로 표시합니다.";
+"Reset time display" = "재설정 시간 표시";
+"Choose how reset times appear in the menu." = "메뉴에 재설정 시간을 표시하는 방식을 선택합니다.";
+"resetTimeDisplay.countdown" = "카운트다운 표시";
+"resetTimeDisplay.absolute" = "초기화 시각 표시";
+"resetTimeDisplay.both" = "둘 다 표시";
 "Show credits + extra usage" = "크레딧 + 추가 사용량 표시";
 "Show Codex Credits and Claude Extra usage sections in the menu." = "메뉴에 Codex 크레딧과 Claude 추가 사용량 섹션을 표시합니다.";
 "Show all token accounts" = "모든 토큰 계정 표시";
@@ -478,6 +483,7 @@
 "Duration in days format" = "%d일 후";
 "Duration in days hours format" = "%d일 %d시간 후";
 "Tomorrow time format" = "내일 %@";
+"Reset combined format" = "%@(%@)";
 "Resets format" = "%@ 재설정";
 "Updated just now" = "방금 업데이트됨";
 "Updated relative format" = "%@ 업데이트됨";

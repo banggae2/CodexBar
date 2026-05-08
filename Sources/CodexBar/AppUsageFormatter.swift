@@ -53,9 +53,7 @@ enum AppUsageFormatter {
         now: Date = .init()) -> String?
     {
         if let date = window.resetsAt {
-            let text = style == .countdown
-                ? self.resetCountdownDescription(from: date, now: now)
-                : self.resetDescription(from: date, now: now)
+            let text = self.resetText(from: date, style: style, now: now)
             return L10n.string("Resets format", text)
         }
 
@@ -65,6 +63,18 @@ enum AppUsageFormatter {
             return L10n.string("Resets format", self.stripEnglishResetPrefix(from: trimmed))
         }
         return nil
+    }
+
+    static func resetText(from date: Date, style: ResetTimeDisplayStyle, now: Date = .init()) -> String {
+        let countdown = self.resetCountdownDescription(from: date, now: now)
+        switch style {
+        case .countdown:
+            return countdown
+        case .absolute:
+            return self.resetDescription(from: date, now: now)
+        case .both:
+            return L10n.string("Reset combined format", countdown, self.resetDescription(from: date, now: now))
+        }
     }
 
     static func updatedString(from date: Date, now: Date = .init()) -> String {

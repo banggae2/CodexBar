@@ -19,7 +19,7 @@ extension SettingsStore {
         _ = self.weeklyLimitRecoveryNotificationsEnabled
         _ = self.weeklyLimitUsageThresholds
         _ = self.usageBarsShowUsed
-        _ = self.resetTimesShowAbsolute
+        _ = self.resetTimeDisplayStyle
         _ = self.menuBarShowsBrandIconWithPercent
         _ = self.menuBarUsageDisplayStyle
         _ = self.menuBarShowsHighestUsage

@@ -1358,9 +1358,7 @@ extension StatusItemController {
             submenu.addItem(item)
         }
         if let resetTime = timeLimit.nextResetTime {
-            let reset = self.settings.resetTimeDisplayStyle == .absolute
-                ? AppUsageFormatter.resetDescription(from: resetTime)
-                : AppUsageFormatter.resetCountdownDescription(from: resetTime)
+            let reset = AppUsageFormatter.resetText(from: resetTime, style: self.settings.resetTimeDisplayStyle)
             let item = NSMenuItem(title: L10n.string("menu.resetsFormat", reset), action: nil, keyEquivalent: "")
             item.isEnabled = false
             submenu.addItem(item)

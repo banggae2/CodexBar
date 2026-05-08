@@ -21,6 +21,7 @@ struct SettingsDefaultsState {
     var weeklyLimitUsageThresholdsRaw: [Int]
     var usageBarsShowUsed: Bool
     var resetTimesShowAbsolute: Bool
+    var resetTimeDisplayStyleRaw: String?
     var menuBarShowsBrandIconWithPercent: Bool
     var menuBarUsageDisplayStyleRaw: String?
     var menuBarDisplayModeRaw: String?

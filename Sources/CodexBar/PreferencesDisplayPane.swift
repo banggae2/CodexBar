@@ -101,10 +101,24 @@ struct DisplayPane: View {
                         subtitle: L10n.string(
                             "Progress bars fill as you consume quota (instead of showing remaining)."),
                         binding: self.$settings.usageBarsShowUsed)
-                    PreferenceToggleRow(
-                        title: L10n.string("Show reset time as clock"),
-                        subtitle: L10n.string("Display reset times as absolute clock values instead of countdowns."),
-                        binding: self.$settings.resetTimesShowAbsolute)
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.string("Reset time display"))
+                                .font(.body)
+                            Text(L10n.string("Choose how reset times appear in the menu."))
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        Picker(L10n.string("Reset time display"), selection: self.$settings.resetTimeDisplayStyle) {
+                            ForEach(ResetTimeDisplayStyle.allCases) { style in
+                                Text(style.label).tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 200)
+                    }
                     PreferenceToggleRow(
                         title: L10n.string("Show credits + extra usage"),
                         subtitle: L10n.string("Show Codex Credits and Claude Extra usage sections in the menu."),

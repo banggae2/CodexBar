@@ -3,6 +3,7 @@ import Foundation
 public enum ResetTimeDisplayStyle: String, Codable, Sendable {
     case countdown
     case absolute
+    case both
 }
 
 public enum UsageFormatter {
@@ -53,9 +54,7 @@ public enum UsageFormatter {
         now: Date = .init()) -> String?
     {
         if let date = window.resetsAt {
-            let text = style == .countdown
-                ? self.resetCountdownDescription(from: date, now: now)
-                : self.resetDescription(from: date, now: now)
+            let text = self.resetText(from: date, style: style, now: now)
             return "Resets \(text)"
         }
 
@@ -66,6 +65,18 @@ public enum UsageFormatter {
             return "Resets \(trimmed)"
         }
         return nil
+    }
+
+    private static func resetText(from date: Date, style: ResetTimeDisplayStyle, now: Date) -> String {
+        let countdown = self.resetCountdownDescription(from: date, now: now)
+        switch style {
+        case .countdown:
+            return countdown
+        case .absolute:
+            return self.resetDescription(from: date, now: now)
+        case .both:
+            return "\(countdown) (\(self.resetDescription(from: date, now: now)))"
+        }
     }
 
     public static func updatedString(from date: Date, now: Date = .init()) -> String {
