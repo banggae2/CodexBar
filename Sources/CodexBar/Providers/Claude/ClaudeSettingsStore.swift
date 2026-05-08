@@ -11,8 +11,10 @@ extension SettingsStore {
             let source: ProviderSourceMode? = switch newValue {
             case .auto: .auto
             case .cli: .cli
+            case .claudeDashboardPlugin: .claudeDashboardPlugin
             case .log: .log
-            case .oauth, .web: .auto
+            case .oauth: .oauth
+            case .web: .auto
             }
             self.updateProviderConfig(provider: .claude) { entry in
                 entry.source = source
@@ -64,16 +66,20 @@ extension SettingsStore {
     private static func claudeUsageDataSource(from source: ProviderSourceMode?) -> ClaudeUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto, .api:
+        case .auto:
             return .auto
+        case .api:
+            return .oauth
         case .web:
             return .auto
         case .cli:
             return .cli
+        case .claudeDashboardPlugin:
+            return .claudeDashboardPlugin
         case .log:
             return .log
         case .oauth:
-            return .auto
+            return .oauth
         }
     }
 

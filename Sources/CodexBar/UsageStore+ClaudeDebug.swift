@@ -160,6 +160,9 @@ extension UsageStore {
                 let cli = await fetcher.debugRawProbe(model: "sonnet")
                 lines.append(cli)
                 return lines.joined(separator: "\n")
+            case .claudeDashboardPlugin:
+                lines.append("Claude Dashboard Plugin source selected.")
+                return lines.joined(separator: "\n")
             case .log:
                 do {
                     let snapshot = try await CostUsageFetcher().loadTokenSnapshot(

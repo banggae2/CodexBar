@@ -31,15 +31,62 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
 }
 
 enum ClaudeOAuthUsageFetcher {
+    private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     private static let fallbackClaudeCodeVersion = "2.1.0"
+    #if DEBUG
+    @TaskLocal private static var dataLoaderOverride: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
+    #endif
 
     static func fetchUsage(accessToken: String) async throws -> OAuthUsageResponse {
-        _ = accessToken
-        throw ClaudeOAuthFetchError.serverError(410, "Claude OAuth usage fetch is disabled.")
+        var request = URLRequest(url: self.usageURL, timeoutInterval: 5)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(self.claudeCodeUserAgent(), forHTTPHeaderField: "User-Agent")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            #if DEBUG
+            if let dataLoaderOverride {
+                (data, response) = try await dataLoaderOverride(request)
+            } else {
+                (data, response) = try await URLSession.shared.data(for: request)
+            }
+            #else
+            (data, response) = try await URLSession.shared.data(for: request)
+            #endif
+        } catch {
+            throw ClaudeOAuthFetchError.networkError(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw ClaudeOAuthFetchError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)
+            if http.statusCode == 401 {
+                throw ClaudeOAuthFetchError.unauthorized
+            }
+            throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
+        }
+
+        do {
+            return try self.decodeUsageResponse(data)
+        } catch {
+            throw ClaudeOAuthFetchError.invalidResponse
+        }
     }
 
     static func decodeUsageResponse(_ data: Data) throws -> OAuthUsageResponse {
         let decoder = JSONDecoder()
+        if let envelope = try? decoder.decode(OAuthUsageEnvelope.self, from: data),
+           let usage = envelope.data
+        {
+            return usage
+        }
         return try decoder.decode(OAuthUsageResponse.self, from: data)
     }
 
@@ -69,6 +116,10 @@ enum ClaudeOAuthUsageFetcher {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+}
+
+private struct OAuthUsageEnvelope: Decodable {
+    let data: OAuthUsageResponse?
 }
 
 struct OAuthUsageResponse: Decodable {
@@ -204,6 +255,15 @@ extension ClaudeOAuthUsageFetcher {
 
     static func _userAgentForTesting(versionString: String?) -> String {
         self.claudeCodeUserAgent(versionString: versionString)
+    }
+
+    static func _withDataLoaderForTesting<T>(
+        _ loader: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse),
+        operation: () async throws -> T) async rethrows -> T
+    {
+        try await self.$dataLoaderOverride.withValue(loader) {
+            try await operation()
+        }
     }
 }
 #endif

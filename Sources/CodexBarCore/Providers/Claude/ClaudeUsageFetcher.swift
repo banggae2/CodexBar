@@ -201,6 +201,8 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
         TimeInterval,
         [String: String]) async -> ClaudeOAuthDelegatedRefreshCoordinator.Outcome)?
     @TaskLocal static var hasCachedCredentialsOverride: Bool?
+    @TaskLocal static var hasDashboardPluginCacheOverride: Bool?
+    @TaskLocal static var hasLocalLogsOverride: Bool?
     #endif
 
     /// Creates a new ClaudeUsageFetcher.
@@ -438,9 +440,13 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
 
         func loadLatestUsage(model: String) async throws -> ClaudeUsageSnapshot {
             switch self.fetcher.dataSource {
-            case .auto, .oauth, .web:
+            case .auto:
                 return try await self.executeAuto(model: model)
-            case .cli, .log:
+            case .oauth:
+                return try await self.fetcher.loadViaOAuth(allowDelegatedRetry: true)
+            case .web:
+                return try await self.fetcher.loadViaWebAPI()
+            case .cli, .claudeDashboardPlugin, .log:
                 do {
                     var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                     snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
@@ -480,13 +486,26 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
 
         private func makeAutoFetchPlan() async -> ClaudeFetchPlan {
             let hasCLI = ClaudeCLIResolver.isAvailable(environment: self.fetcher.environment)
+            #if DEBUG
+            let hasDashboardPluginCache = ClaudeUsageFetcher.hasDashboardPluginCacheOverride
+                ?? ClaudeDashboardPluginCacheFetchStrategy.hasCache()
+            let hasLocalLogs = ClaudeUsageFetcher.hasLocalLogsOverride ?? true
+            #else
+            let hasDashboardPluginCache = ClaudeDashboardPluginCacheFetchStrategy.hasCache()
+            let hasLocalLogs = true
+            #endif
             return ClaudeSourcePlanner.resolve(input: ClaudeSourcePlanningInput(
                 runtime: self.fetcher.runtime,
                 selectedDataSource: .auto,
                 webExtrasEnabled: self.fetcher.useWebExtras,
                 hasWebSession: false,
                 hasCLI: hasCLI,
-                hasOAuthCredentials: false))
+                hasLocalLogs: hasLocalLogs,
+                hasDashboardPluginCache: hasDashboardPluginCache,
+                hasOAuthCredentials: ClaudeOAuthPlanningAvailability.isAvailable(
+                    runtime: self.fetcher.runtime,
+                    sourceMode: .auto,
+                    environment: self.fetcher.environment)))
         }
 
         private func logAutoPlan(_ plan: ClaudeFetchPlan) {
@@ -510,10 +529,14 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
                 var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                 snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
                 return snapshot
-            case .log, .oauth, .web:
+            case .claudeDashboardPlugin, .log:
                 var snapshot = try await self.fetcher.loadViaPTY(model: model, timeout: 10)
                 snapshot = await self.fetcher.applyWebExtrasIfNeeded(to: snapshot)
                 return snapshot
+            case .oauth:
+                return try await self.fetcher.loadViaOAuth(allowDelegatedRetry: true)
+            case .web:
+                return try await self.fetcher.loadViaWebAPI()
             case .auto:
                 throw ClaudeUsageError.parseFailed("Planner emitted invalid auto execution step.")
             }

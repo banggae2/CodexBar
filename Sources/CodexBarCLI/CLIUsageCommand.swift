@@ -437,7 +437,7 @@ extension CodexBarCLI {
             true
         case .auto:
             ProviderDescriptorRegistry.descriptor(for: provider).fetchPlan.sourceModes.contains(.web)
-        case .cli, .log, .oauth, .api:
+        case .cli, .claudeDashboardPlugin, .log, .oauth, .api:
             false
         }
     }

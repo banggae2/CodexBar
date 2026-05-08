@@ -38,7 +38,9 @@ struct ClaudeProviderImplementation: ProviderImplementation {
     }
 
     @MainActor
-    func applyTokenAccountCookieSource(settings _: SettingsStore) {}
+    func applyTokenAccountCookieSource(settings: SettingsStore) {
+        settings.claudeCookieSource = .manual
+    }
 
     @MainActor
     func defaultSourceLabel(context: ProviderSourceLabelContext) -> String? {
@@ -50,8 +52,10 @@ struct ClaudeProviderImplementation: ProviderImplementation {
         switch context.settings.claudeUsageDataSource {
         case .auto: .auto
         case .cli: .cli
+        case .claudeDashboardPlugin: .claudeDashboardPlugin
         case .log: .log
-        case .oauth, .web: .auto
+        case .oauth: .oauth
+        case .web: .auto
         }
     }
 
@@ -78,7 +82,7 @@ struct ClaudeProviderImplementation: ProviderImplementation {
                 id: "claude-usage-source",
                 title: L10n.string("Usage source"),
                 subtitle: L10n.string(
-                    "Auto uses the Claude CLI first, then local logs. No web or OAuth usage requests."),
+                    "Auto uses Claude CLI, Claude Dashboard Plugin cache, local logs, then OAuth API."),
                 binding: usageBinding,
                 options: usageOptions,
                 isVisible: nil,

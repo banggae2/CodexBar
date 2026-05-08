@@ -54,7 +54,7 @@ extension SettingsStore {
     private static func windsurfUsageDataSource(from source: ProviderSourceMode?) -> WindsurfUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto, .oauth, .api:
+        case .auto, .claudeDashboardPlugin, .oauth, .api:
             return .auto
         case .web:
             return .web

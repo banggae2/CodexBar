@@ -10,6 +10,7 @@ public enum ProviderSourceMode: String, CaseIterable, Sendable, Codable {
     case web
     case cli
     case log
+    case claudeDashboardPlugin = "claude-dashboard-plugin"
     case oauth
     case api
 

@@ -33,7 +33,7 @@ public enum ClaudeProviderDescriptor {
                 supportsTokenCost: true,
                 noDataMessage: self.noDataMessage),
             fetchPlan: ProviderFetchPlan(
-                sourceModes: [.auto, .cli, .log],
+                sourceModes: [.auto, .cli, .claudeDashboardPlugin, .log, .oauth, .api],
                 pipeline: ProviderFetchPipeline(resolveStrategies: self.resolveStrategies)),
             cli: ProviderCLIConfig(
                 name: "claude",
@@ -43,8 +43,6 @@ public enum ClaudeProviderDescriptor {
     }
 
     private static func resolveStrategies(context: ProviderFetchContext) async -> [any ProviderFetchStrategy] {
-        guard context.sourceMode != .api else { return [] }
-
         let planningInput = await Self.makePlanningInput(context: context)
         let plan = ClaudeSourcePlanner.resolve(input: planningInput)
 
@@ -55,13 +53,14 @@ public enum ClaudeProviderDescriptor {
                     useWebExtras: false,
                     manualCookieHeader: nil,
                     browserDetection: context.browserDetection)
+            case .claudeDashboardPlugin:
+                ClaudeDashboardPluginCacheFetchStrategy()
             case .log:
                 ClaudeLocalLogFetchStrategy()
-            case .oauth, .web:
-                ClaudeCLIFetchStrategy(
-                    useWebExtras: false,
-                    manualCookieHeader: nil,
-                    browserDetection: context.browserDetection)
+            case .oauth:
+                ClaudeOAuthFetchStrategy()
+            case .web:
+                ClaudeWebFetchStrategy(browserDetection: context.browserDetection)
             case .auto:
                 fatalError("Planner must not emit .auto as an executable step.")
             }
@@ -71,7 +70,9 @@ public enum ClaudeProviderDescriptor {
 
     private static func makePlanningInput(context: ProviderFetchContext) async -> ClaudeSourcePlanningInput {
         let webExtrasEnabled = context.settings?.claude?.webExtrasEnabled ?? false
-        let needsOAuthAvailability = context.runtime == .app && context.sourceMode == .auto
+        let needsOAuthAvailability = context.sourceMode == .auto ||
+            context.sourceMode == .oauth ||
+            context.sourceMode == .api
 
         return ClaudeSourcePlanningInput(
             runtime: context.runtime,
@@ -79,6 +80,7 @@ public enum ClaudeProviderDescriptor {
             webExtrasEnabled: webExtrasEnabled,
             hasWebSession: false,
             hasCLI: ClaudeCLIResolver.isAvailable(environment: context.env),
+            hasDashboardPluginCache: ClaudeDashboardPluginCacheFetchStrategy.hasCache(),
             hasOAuthCredentials: needsOAuthAvailability && ClaudeOAuthPlanningAvailability.isAvailable(
                 runtime: context.runtime,
                 sourceMode: context.sourceMode,
@@ -109,16 +111,18 @@ public enum ClaudeProviderDescriptor {
 
     private static func sourceDataSource(from mode: ProviderSourceMode) -> ClaudeUsageDataSource {
         switch mode {
-        case .auto, .api:
+        case .auto:
             .auto
         case .web:
             .auto
         case .cli:
             .cli
+        case .claudeDashboardPlugin:
+            .claudeDashboardPlugin
         case .log:
             .log
-        case .oauth:
-            .auto
+        case .oauth, .api:
+            .oauth
         }
     }
 }
@@ -278,7 +282,7 @@ struct ClaudeOAuthFetchStrategy: ProviderFetchStrategy {
             oauthKeychainPromptCooldownEnabled: context.sourceMode == .auto,
             allowBackgroundDelegatedRefresh: context.runtime == .cli,
             allowStartupBootstrapPrompt: context.runtime == .app &&
-                (context.sourceMode == .auto || context.sourceMode == .oauth),
+                (context.sourceMode == .auto || context.sourceMode == .oauth || context.sourceMode == .api),
             useWebExtras: false)
         let usage = try await fetcher.loadLatestUsage(model: "sonnet")
         return self.makeResult(
@@ -384,6 +388,157 @@ struct ClaudeCLIFetchStrategy: ProviderFetchStrategy {
     func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
         _ = context
         return false
+    }
+}
+
+struct ClaudeDashboardPluginCacheFetchStrategy: ProviderFetchStrategy {
+    let id: String = "claude.dashboard-plugin"
+    let kind: ProviderFetchKind = .localProbe
+    let cacheDirectory: URL
+
+    init(cacheDirectory: URL = Self.defaultCacheDirectory()) {
+        self.cacheDirectory = cacheDirectory
+    }
+
+    static func defaultCacheDirectory(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL
+    {
+        homeDirectory
+            .appendingPathComponent(".cache", isDirectory: true)
+            .appendingPathComponent("claude-dashboard", isDirectory: true)
+    }
+
+    static func hasCache() -> Bool {
+        self.latestCacheFile(in: self.defaultCacheDirectory()) != nil
+    }
+
+    func isAvailable(_: ProviderFetchContext) async -> Bool {
+        Self.latestCacheFile(in: self.cacheDirectory) != nil
+    }
+
+    func fetch(_: ProviderFetchContext) async throws -> ProviderFetchResult {
+        guard let cacheFile = Self.latestCacheFile(in: self.cacheDirectory) else {
+            throw ClaudeUsageError.parseFailed("No Claude Dashboard Plugin cache found in ~/.cache/claude-dashboard.")
+        }
+
+        let data = try Data(contentsOf: cacheFile)
+        let updatedAt = (try? FileManager.default.attributesOfItem(atPath: cacheFile.path)[.modificationDate] as? Date)
+            ?? Date()
+        let usage = try Self.parseUsageSnapshot(from: data, updatedAt: updatedAt)
+        return self.makeResult(usage: usage, sourceLabel: "claude-dashboard-plugin")
+    }
+
+    func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
+        context.sourceMode == .auto
+    }
+
+    private static func latestCacheFile(in directory: URL) -> URL? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else {
+            return nil
+        }
+
+        var newest: (url: URL, modifiedAt: Date)?
+        for case let url as URL in enumerator {
+            guard url.pathExtension == "json",
+                  url.lastPathComponent.hasPrefix("cache-")
+            else {
+                continue
+            }
+
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+            guard values?.isRegularFile == true,
+                  let modifiedAt = values?.contentModificationDate
+            else {
+                continue
+            }
+
+            if newest == nil || modifiedAt > newest!.modifiedAt {
+                newest = (url, modifiedAt)
+            }
+        }
+        return newest?.url
+    }
+
+    private static func parseUsageSnapshot(from data: Data, updatedAt: Date) throws -> UsageSnapshot {
+        let envelope = try JSONDecoder().decode(ClaudeDashboardPluginCacheEnvelope.self, from: data)
+
+        func makeWindow(_ bucket: ClaudeDashboardPluginCacheBucket?, windowMinutes: Int) -> RateWindow? {
+            guard let utilization = bucket?.utilization else { return nil }
+            let resetsAt = ClaudeOAuthUsageFetcher.parseISO8601Date(bucket?.resetsAt)
+            return RateWindow(
+                usedPercent: utilization,
+                windowMinutes: windowMinutes,
+                resetsAt: resetsAt,
+                resetDescription: nil)
+        }
+
+        let primary = makeWindow(envelope.data?.fiveHour ?? envelope.fiveHour, windowMinutes: 5 * 60)
+        let secondary = makeWindow(envelope.data?.sevenDay ?? envelope.sevenDay, windowMinutes: 7 * 24 * 60)
+        let tertiary = makeWindow(
+            envelope.data?.sevenDaySonnet
+                ?? envelope.sevenDaySonnet
+                ?? envelope.data?.sevenDayOpus
+                ?? envelope.sevenDayOpus,
+            windowMinutes: 7 * 24 * 60)
+        guard primary != nil || secondary != nil || tertiary != nil else {
+            throw ClaudeUsageError.parseFailed("Claude Dashboard Plugin cache did not include usage limits.")
+        }
+
+        let identity = ProviderIdentitySnapshot(
+            providerID: .claude,
+            accountEmail: nil,
+            accountOrganization: nil,
+            loginMethod: "Claude Dashboard Plugin")
+        return UsageSnapshot(
+            primary: primary,
+            secondary: secondary,
+            tertiary: tertiary,
+            updatedAt: updatedAt,
+            identity: identity)
+    }
+}
+
+private struct ClaudeDashboardPluginCacheEnvelope: Decodable {
+    let data: ClaudeDashboardPluginCachePayload?
+    let fiveHour: ClaudeDashboardPluginCacheBucket?
+    let sevenDay: ClaudeDashboardPluginCacheBucket?
+    let sevenDaySonnet: ClaudeDashboardPluginCacheBucket?
+    let sevenDayOpus: ClaudeDashboardPluginCacheBucket?
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case fiveHour = "five_hour"
+        case sevenDay = "seven_day"
+        case sevenDaySonnet = "seven_day_sonnet"
+        case sevenDayOpus = "seven_day_opus"
+    }
+}
+
+private struct ClaudeDashboardPluginCachePayload: Decodable {
+    let fiveHour: ClaudeDashboardPluginCacheBucket?
+    let sevenDay: ClaudeDashboardPluginCacheBucket?
+    let sevenDaySonnet: ClaudeDashboardPluginCacheBucket?
+    let sevenDayOpus: ClaudeDashboardPluginCacheBucket?
+
+    enum CodingKeys: String, CodingKey {
+        case fiveHour = "five_hour"
+        case sevenDay = "seven_day"
+        case sevenDaySonnet = "seven_day_sonnet"
+        case sevenDayOpus = "seven_day_opus"
+    }
+}
+
+private struct ClaudeDashboardPluginCacheBucket: Decodable {
+    let utilization: Double?
+    let resetsAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case utilization
+        case resetsAt = "resets_at"
     }
 }
 

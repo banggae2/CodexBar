@@ -1072,8 +1072,7 @@ struct ClaudeAutoFetcherCharacterizationTests {
     }
 
     @Test
-    func `auto prefers OAuth even when web and CLI appear available`() async throws {
-        let usageResponse = try Self.makeOAuthUsageResponse()
+    func `auto prefers CLI even when OAuth and web appear available`() async throws {
         let cliLogURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("claude-auto-cli-log-\(UUID().uuidString).txt")
         let log = InvocationLog(url: cliLogURL)
@@ -1082,6 +1081,7 @@ struct ClaudeAutoFetcherCharacterizationTests {
         let fetcher = ClaudeUsageFetcher(
             browserDetection: BrowserDetection(cacheTTL: 0),
             environment: [
+                "CLAUDE_CLI_PATH": fakeCLI.path,
                 ClaudeOAuthCredentialsStore.environmentTokenKey: "oauth-token",
                 ClaudeOAuthCredentialsStore.environmentScopesKey: "user:profile",
             ],
@@ -1095,7 +1095,9 @@ struct ClaudeAutoFetcherCharacterizationTests {
                 let url = try #require(request.url)
                 return Self.makeJSONResponse(url: url, body: "{}")
             }, operation: {
-                let fetchOverride: @Sendable (String) async throws -> OAuthUsageResponse = { _ in usageResponse }
+                let fetchOverride: @Sendable (String) async throws -> OAuthUsageResponse = { _ in
+                    throw ClaudeUsageError.oauthFailed("OAuth should not be used before CLI in Auto mode.")
+                }
                 let snapshot = try await ClaudeUsageFetcher.$fetchOAuthUsageOverride.withValue(
                     fetchOverride,
                     operation: {
@@ -1104,7 +1106,7 @@ struct ClaudeAutoFetcherCharacterizationTests {
 
                 #expect(snapshot.primary.usedPercent == 7)
                 #expect(snapshot.secondary?.usedPercent == 21)
-                #expect(log.contents().isEmpty)
+                #expect(log.contents().contains("usage"))
                 let requests = webRequests.current()
                 #expect(requests.isEmpty)
             })
@@ -1184,7 +1186,7 @@ struct ClaudeAutoFetcherCharacterizationTests {
     }
 
     @Test
-    func `CLI runtime auto prefers web before CLI when OAuth unavailable`() async throws {
+    func `CLI runtime auto prefers CLI before web when OAuth unavailable`() async throws {
         let cliLogURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("claude-auto-cli-runtime-web-log-\(UUID().uuidString).txt")
         let log = InvocationLog(url: cliLogURL)
@@ -1242,12 +1244,12 @@ struct ClaudeAutoFetcherCharacterizationTests {
                 }, operation: {
                     let snapshot = try await fetcher.loadLatestUsage(model: "sonnet")
 
-                    #expect(snapshot.primary.usedPercent == 11)
-                    #expect(snapshot.secondary?.usedPercent == 22)
-                    #expect(snapshot.opus?.usedPercent == 33)
-                    #expect(snapshot.accountEmail == "web@example.com")
-                    #expect(snapshot.loginMethod == "Claude Max")
-                    #expect(log.contents().isEmpty)
+                    #expect(snapshot.primary.usedPercent == 7)
+                    #expect(snapshot.secondary?.usedPercent == 21)
+                    #expect(snapshot.opus?.usedPercent == nil)
+                    #expect(snapshot.accountEmail == "cli@example.com")
+                    #expect(snapshot.loginMethod == nil)
+                    #expect(log.contents().contains("usage"))
                 })
             }
         }
@@ -1264,13 +1266,17 @@ struct ClaudeAutoFetcherCharacterizationTests {
 
         await self.withNoOAuthCredentials {
             await ClaudeCLIResolver.withResolvedBinaryPathOverrideForTesting("/definitely/missing/claude") {
-                do {
-                    _ = try await fetcher.loadLatestUsage(model: "sonnet")
-                    Issue.record("Expected app auto no-source fetch to fail.")
-                } catch let error as ClaudeUsageError {
-                    #expect(error.localizedDescription.contains("Claude planner produced no executable steps."))
-                } catch {
-                    Issue.record("Unexpected error: \(error)")
+                await ClaudeUsageFetcher.$hasDashboardPluginCacheOverride.withValue(false) {
+                    await ClaudeUsageFetcher.$hasLocalLogsOverride.withValue(false) {
+                        do {
+                            _ = try await fetcher.loadLatestUsage(model: "sonnet")
+                            Issue.record("Expected app auto no-source fetch to fail.")
+                        } catch let error as ClaudeUsageError {
+                            #expect(error.localizedDescription.contains("Claude planner produced no executable steps."))
+                        } catch {
+                            Issue.record("Unexpected error: \(error)")
+                        }
+                    }
                 }
             }
         }
@@ -1287,13 +1293,17 @@ struct ClaudeAutoFetcherCharacterizationTests {
 
         await self.withNoOAuthCredentials {
             await ClaudeCLIResolver.withResolvedBinaryPathOverrideForTesting("/definitely/missing/claude") {
-                do {
-                    _ = try await fetcher.loadLatestUsage(model: "sonnet")
-                    Issue.record("Expected CLI auto no-source fetch to fail.")
-                } catch let error as ClaudeUsageError {
-                    #expect(error.localizedDescription.contains("Claude planner produced no executable steps."))
-                } catch {
-                    Issue.record("Unexpected error: \(error)")
+                await ClaudeUsageFetcher.$hasDashboardPluginCacheOverride.withValue(false) {
+                    await ClaudeUsageFetcher.$hasLocalLogsOverride.withValue(false) {
+                        do {
+                            _ = try await fetcher.loadLatestUsage(model: "sonnet")
+                            Issue.record("Expected CLI auto no-source fetch to fail.")
+                        } catch let error as ClaudeUsageError {
+                            #expect(error.localizedDescription.contains("Claude planner produced no executable steps."))
+                        } catch {
+                            Issue.record("Unexpected error: \(error)")
+                        }
+                    }
                 }
             }
         }

@@ -390,7 +390,7 @@ struct TokenAccountCLIContext {
     private static func kiloUsageDataSource(from source: ProviderSourceMode?) -> KiloUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto, .web, .log, .oauth:
+        case .auto, .web, .claudeDashboardPlugin, .log, .oauth:
             return .auto
         case .api:
             return .api

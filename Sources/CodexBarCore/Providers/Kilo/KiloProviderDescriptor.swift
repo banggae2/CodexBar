@@ -48,7 +48,7 @@ public enum KiloProviderDescriptor {
             [KiloCLIFetchStrategy()]
         case .auto:
             [KiloAPIFetchStrategy(), KiloCLIFetchStrategy()]
-        case .web, .log, .oauth:
+        case .web, .claudeDashboardPlugin, .log, .oauth:
             []
         }
     }

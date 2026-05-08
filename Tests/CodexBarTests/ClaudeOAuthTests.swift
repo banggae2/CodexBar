@@ -267,6 +267,39 @@ struct ClaudeOAuthTests {
     }
 
     @Test
+    func `oauth usage fetch calls anthropic usage endpoint`() async throws {
+        let payload = """
+        {
+          "data": {
+            "five_hour": { "utilization": 12, "resets_at": "2026-05-07T11:40:00.000Z" },
+            "seven_day": { "utilization": 34, "resets_at": "2026-05-08T19:00:00.000Z" }
+          }
+        }
+        """
+        let requestCapture = OAuthUsageRequestCapture()
+        let responseURL = try #require(URL(string: "https://api.anthropic.com/api/oauth/usage"))
+
+        let usage = try await ClaudeOAuthUsageFetcher._withDataLoaderForTesting { request in
+            await requestCapture.record(request)
+            let response = HTTPURLResponse(
+                url: responseURL,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"])!
+            return (Data(payload.utf8), response)
+        } operation: {
+            try await ClaudeOAuthUsageFetcher.fetchUsage(accessToken: "test-token")
+        }
+
+        #expect(usage.fiveHour?.utilization == 12)
+        let request = try #require(await requestCapture.request)
+        #expect(request.url?.absoluteString == "https://api.anthropic.com/api/oauth/usage")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+        #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "oauth-2025-04-20")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+    }
+
+    @Test
     func `skips extra usage when disabled`() throws {
         let json = """
         {
@@ -285,14 +318,14 @@ struct ClaudeOAuthTests {
     // MARK: - Scope-based strategy resolution
 
     @Test
-    func `prefers O auth when available`() {
+    func `auto keeps O auth below CLI`() {
         let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
             selectedDataSource: .auto,
             webExtrasEnabled: false,
             hasWebSession: true,
             hasCLI: true,
             hasOAuthCredentials: true)
-        #expect(strategy.dataSource == .oauth)
+        #expect(strategy.dataSource == .cli)
     }
 
     @Test
@@ -307,14 +340,14 @@ struct ClaudeOAuthTests {
     }
 
     @Test
-    func `falls back to web when O auth missing and CLI missing`() {
+    func `falls back to dashboard plugin cache when O auth missing and CLI missing`() {
         let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
             selectedDataSource: .auto,
             webExtrasEnabled: false,
             hasWebSession: true,
             hasCLI: false,
             hasOAuthCredentials: false)
-        #expect(strategy.dataSource == .web)
+        #expect(strategy.dataSource == .claudeDashboardPlugin)
     }
 
     @Test
@@ -326,5 +359,13 @@ struct ClaudeOAuthTests {
             hasCLI: true,
             hasOAuthCredentials: false)
         #expect(strategy.dataSource == .cli)
+    }
+}
+
+private actor OAuthUsageRequestCapture {
+    private(set) var request: URLRequest?
+
+    func record(_ request: URLRequest) {
+        self.request = request
     }
 }

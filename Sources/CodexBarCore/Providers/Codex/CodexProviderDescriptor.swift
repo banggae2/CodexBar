@@ -54,7 +54,7 @@ public enum CodexProviderDescriptor {
                 return [web]
             case .cli:
                 return [cli]
-            case .log, .api:
+            case .claudeDashboardPlugin, .log, .api:
                 return []
             case .auto:
                 return [web, cli]
@@ -67,7 +67,7 @@ public enum CodexProviderDescriptor {
                 return [cli]
             case .web:
                 return [web]
-            case .log, .api:
+            case .claudeDashboardPlugin, .log, .api:
                 return []
             case .auto:
                 return [oauth, cli]

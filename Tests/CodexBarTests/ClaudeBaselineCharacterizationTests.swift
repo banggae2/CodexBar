@@ -96,7 +96,7 @@ struct ClaudeBaselineCharacterizationTests {
     }
 
     @Test
-    func `app auto pipeline order is CLI then local log`() async {
+    func `app auto pipeline order is CLI dashboard plugin local log then OAuth`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: true,
@@ -108,11 +108,11 @@ struct ClaudeBaselineCharacterizationTests {
             "CLAUDE_CLI_PATH": "/usr/bin/true",
         ]
         let strategyIDs = await self.strategyIDs(runtime: .app, sourceMode: .auto, env: env, settings: settings)
-        #expect(strategyIDs == ["claude.cli", "claude.log"])
+        #expect(strategyIDs == ["claude.cli", "claude.dashboard-plugin", "claude.log", "claude.oauth"])
     }
 
     @Test
-    func `CLI auto pipeline order is CLI then local log`() async {
+    func `CLI auto pipeline order is CLI dashboard plugin local log then OAuth`() async {
         let settings = ProviderSettingsSnapshot.make(claude: .init(
             usageDataSource: .auto,
             webExtrasEnabled: false,
@@ -122,7 +122,7 @@ struct ClaudeBaselineCharacterizationTests {
             "CLAUDE_CLI_PATH": "/usr/bin/true",
         ]
         let strategyIDs = await self.strategyIDs(runtime: .cli, sourceMode: .auto, env: env, settings: settings)
-        #expect(strategyIDs == ["claude.cli", "claude.log"])
+        #expect(strategyIDs == ["claude.cli", "claude.dashboard-plugin", "claude.log", "claude.oauth"])
     }
 
     @Test
@@ -154,7 +154,7 @@ struct ClaudeBaselineCharacterizationTests {
 
         await ClaudeCLIResolver.withResolvedBinaryPathOverrideForTesting("/definitely/missing/claude") {
             let strategyIDs = await self.strategyIDs(runtime: .app, sourceMode: .auto, env: env, settings: settings)
-            #expect(strategyIDs == ["claude.cli", "claude.log"])
+            #expect(strategyIDs == ["claude.cli", "claude.dashboard-plugin", "claude.log"])
         }
     }
 
@@ -175,7 +175,7 @@ struct ClaudeBaselineCharacterizationTests {
                 }
             }
         }
-        #expect(strategyIDs == ["claude.cli", "claude.log"])
+        #expect(strategyIDs == ["claude.cli", "claude.dashboard-plugin", "claude.log"])
         #expect(!strategyIDs.contains("claude.oauth"))
     }
 
@@ -226,7 +226,10 @@ struct ClaudeBaselineCharacterizationTests {
 
     @Test(arguments: [
         (ProviderSourceMode.cli, "claude.cli"),
+        (ProviderSourceMode.claudeDashboardPlugin, "claude.dashboard-plugin"),
         (ProviderSourceMode.log, "claude.log"),
+        (ProviderSourceMode.oauth, "claude.oauth"),
+        (ProviderSourceMode.api, "claude.oauth"),
     ])
     func `explicit modes resolve single Claude strategy`(
         sourceMode: ProviderSourceMode,
@@ -238,7 +241,10 @@ struct ClaudeBaselineCharacterizationTests {
 
     @Test(arguments: [
         (ProviderSourceMode.cli, "claude.cli"),
+        (ProviderSourceMode.claudeDashboardPlugin, "claude.dashboard-plugin"),
         (ProviderSourceMode.log, "claude.log"),
+        (ProviderSourceMode.oauth, "claude.oauth"),
+        (ProviderSourceMode.api, "claude.oauth"),
     ])
     func `CLI explicit modes resolve single Claude strategy`(
         sourceMode: ProviderSourceMode,

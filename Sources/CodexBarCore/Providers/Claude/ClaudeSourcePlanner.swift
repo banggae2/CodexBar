@@ -7,6 +7,7 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
     public let hasWebSession: Bool
     public let hasCLI: Bool
     public let hasLocalLogs: Bool
+    public let hasDashboardPluginCache: Bool
     public let hasOAuthCredentials: Bool
 
     public init(
@@ -16,6 +17,7 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         hasWebSession: Bool,
         hasCLI: Bool,
         hasLocalLogs: Bool = true,
+        hasDashboardPluginCache: Bool = true,
         hasOAuthCredentials: Bool)
     {
         self.runtime = runtime
@@ -24,6 +26,7 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         self.hasWebSession = hasWebSession
         self.hasCLI = hasCLI
         self.hasLocalLogs = hasLocalLogs
+        self.hasDashboardPluginCache = hasDashboardPluginCache
         self.hasOAuthCredentials = hasOAuthCredentials
     }
 }
@@ -32,7 +35,9 @@ public enum ClaudeSourcePlanReason: String, Equatable, Sendable {
     case explicitSourceSelection = "explicit-source-selection"
     case appAutoPreferredCLI = "app-auto-preferred-cli"
     case cliAutoPreferredCLI = "cli-auto-preferred-cli"
+    case autoFallbackDashboardPlugin = "auto-fallback-dashboard-plugin"
     case autoFallbackLocalLog = "auto-fallback-local-log"
+    case autoFallbackOAuthAPI = "auto-fallback-oauth-api"
 }
 
 public struct ClaudeFetchPlanStep: Equatable, Sendable {
@@ -70,18 +75,18 @@ public struct ClaudeFetchPlan: Equatable, Sendable {
 
     public var preferredStep: ClaudeFetchPlanStep? {
         switch self.input.selectedDataSource {
-        case .auto, .oauth, .web:
+        case .auto:
             self.availableSteps.first
-        case .cli, .log:
+        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
             self.orderedSteps.first
         }
     }
 
     public var executionSteps: [ClaudeFetchPlanStep] {
         switch self.input.selectedDataSource {
-        case .auto, .oauth, .web:
+        case .auto:
             self.availableSteps
-        case .cli, .log:
+        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
             self.orderedSteps
         }
     }
@@ -171,20 +176,24 @@ public enum ClaudeSourcePlanner {
 
     private static func makeSteps(input: ClaudeSourcePlanningInput) -> [ClaudeFetchPlanStep] {
         switch input.selectedDataSource {
-        case .auto, .oauth, .web:
+        case .auto:
             switch input.runtime {
             case .app:
                 [
                     self.step(.cli, reason: .appAutoPreferredCLI, input: input),
+                    self.step(.claudeDashboardPlugin, reason: .autoFallbackDashboardPlugin, input: input),
                     self.step(.log, reason: .autoFallbackLocalLog, input: input),
+                    self.step(.oauth, reason: .autoFallbackOAuthAPI, input: input),
                 ]
             case .cli:
                 [
                     self.step(.cli, reason: .cliAutoPreferredCLI, input: input),
+                    self.step(.claudeDashboardPlugin, reason: .autoFallbackDashboardPlugin, input: input),
                     self.step(.log, reason: .autoFallbackLocalLog, input: input),
+                    self.step(.oauth, reason: .autoFallbackOAuthAPI, input: input),
                 ]
             }
-        case .cli, .log:
+        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
             [self.step(input.selectedDataSource, reason: .explicitSourceSelection, input: input)]
         }
     }
@@ -209,9 +218,13 @@ public enum ClaudeSourcePlanner {
             false
         case .cli:
             input.hasCLI
+        case .claudeDashboardPlugin:
+            input.hasDashboardPluginCache
         case .log:
             input.hasLocalLogs
-        case .oauth, .web:
+        case .oauth:
+            input.hasOAuthCredentials
+        case .web:
             false
         }
     }
