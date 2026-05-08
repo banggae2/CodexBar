@@ -2,6 +2,7 @@ import Foundation
 
 struct SettingsDefaultsState {
     var refreshFrequency: RefreshFrequency
+    var menuOpenRefreshEnabled: Bool
     var appLanguageRaw: String?
     var launchAtLogin: Bool
     var debugMenuEnabled: Bool

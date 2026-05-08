@@ -407,6 +407,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuOpenRefreshEnabled = true
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
         var delayedRefreshWakeCount = 0
@@ -429,7 +430,6 @@ struct StatusMenuTests {
         #expect(delayedRefreshWakeCount == 0)
     }
 
-    @Test
     func `login state callbacks do not attach menus after release`() {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()

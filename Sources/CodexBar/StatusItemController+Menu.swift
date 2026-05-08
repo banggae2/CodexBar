@@ -969,7 +969,10 @@ extension StatusItemController {
     private func scheduleOpenMenuRefresh(for menu: NSMenu) {
         // Kick off a user-initiated refresh on open (non-forced) and re-check after a delay.
         // NEVER block menu opening with network requests.
-        if !self.store.isRefreshing {
+        if self.settings.menuOpenRefreshEnabled, !self.store.isRefreshing {
+            #if DEBUG
+            self.onImmediateMenuRefreshAttemptForTesting?()
+            #endif
             self.refreshStore(forceTokenUsage: false)
         }
         let key = ObjectIdentifier(menu)
@@ -979,6 +982,7 @@ extension StatusItemController {
             try? await Task.sleep(for: Self.menuOpenRefreshDelay)
             guard !Task.isCancelled else { return }
             guard Self.menuRefreshEnabled else { return }
+            guard self.settings.menuOpenRefreshEnabled else { return }
             #if DEBUG
             self.onDelayedMenuRefreshAttemptForTesting?()
             #endif

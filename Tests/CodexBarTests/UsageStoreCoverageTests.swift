@@ -398,6 +398,33 @@ struct UsageStoreCoverageTests {
         #expect(store.tokenAccountErrorMessage(ProviderFetchError.noAvailableStrategy(.copilot)) != nil)
     }
 
+    @Test
+    func `ui only settings do not trigger storage refresh`() async throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UsageStoreCoverageTests-ui-only-\(UUID().uuidString)", isDirectory: true)
+        let codexHome = home.appendingPathComponent(".codex", isDirectory: true)
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 8).write(to: codexHome.appendingPathComponent("session.jsonl"))
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-ui-only-refresh")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.providerStorageFootprintsEnabled = true
+        let store = UsageStore(
+            fetcher: UsageFetcher(environment: [:]),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            environmentBase: ["CODEX_HOME": codexHome.path])
+        store.managedCodexAccountsForStorageOverride = []
+
+        settings.usageBarsShowUsed.toggle()
+        try? await Task.sleep(for: .milliseconds(250))
+
+        #expect(store.lastStorageRefreshAt == nil)
+        #expect(store.providerStorageFootprints.isEmpty)
+    }
+
     private static func makeSettingsStore(
         suite: String,
         zaiTokenStore: any ZaiTokenStoring = NoopZaiTokenStore(),

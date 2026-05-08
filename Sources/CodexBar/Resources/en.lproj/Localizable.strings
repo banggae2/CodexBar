@@ -657,3 +657,5 @@
 "Account Added" = "Account Added";
 "Login Failed" = "Login Failed";
 "System Account" = "System Account";
+"Refresh when menu opens" = "Refresh when menu opens";
+"Can run network requests, CLI probes, and storage scans when the menu opens." = "Can run network requests, CLI probes, and storage scans when the menu opens.";

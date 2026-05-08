@@ -13,6 +13,14 @@ extension SettingsStore {
         }
     }
 
+    var menuOpenRefreshEnabled: Bool {
+        get { self.defaultsState.menuOpenRefreshEnabled }
+        set {
+            self.defaultsState.menuOpenRefreshEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "menuOpenRefreshEnabled")
+        }
+    }
+
     var appLanguage: AppLanguage {
         get { AppLanguage(rawValue: self.defaultsState.appLanguageRaw ?? "") ?? .system }
         set {

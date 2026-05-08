@@ -302,11 +302,16 @@ extension SettingsStore {
     }
 
     private static func loadDefaultsState(userDefaults: UserDefaults) -> SettingsDefaultsState {
-        let refreshDefault = userDefaults.string(forKey: "refreshFrequency")
-            .flatMap(RefreshFrequency.init(rawValue:))
+        let refreshDefaultRaw = userDefaults.string(forKey: "refreshFrequency")
+        let refreshDefault = refreshDefaultRaw.flatMap(RefreshFrequency.init(rawValue:))
         let refreshFrequency = refreshDefault ?? .fiveMinutes
         if refreshDefault == nil {
             userDefaults.set(refreshFrequency.rawValue, forKey: "refreshFrequency")
+        }
+        let menuOpenRefreshDefault = userDefaults.object(forKey: "menuOpenRefreshEnabled") as? Bool
+        let menuOpenRefreshEnabled = menuOpenRefreshDefault ?? (refreshDefaultRaw != nil)
+        if menuOpenRefreshDefault == nil {
+            userDefaults.set(menuOpenRefreshEnabled, forKey: "menuOpenRefreshEnabled")
         }
         let appLanguageRaw = userDefaults.string(forKey: AppLanguage.userDefaultsKey)
         let appLanguage = appLanguageRaw.flatMap(AppLanguage.init(rawValue:)) ?? .system
@@ -390,6 +395,7 @@ extension SettingsStore {
 
         return SettingsDefaultsState(
             refreshFrequency: refreshFrequency,
+            menuOpenRefreshEnabled: menuOpenRefreshEnabled,
             appLanguageRaw: appLanguage.rawValue,
             launchAtLogin: launchAtLogin,
             debugMenuEnabled: debugMenuEnabled,
