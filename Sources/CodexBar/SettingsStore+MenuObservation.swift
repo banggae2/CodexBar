@@ -24,6 +24,7 @@ extension SettingsStore {
         _ = self.menuBarUsageDisplayStyle
         _ = self.menuBarShowsHighestUsage
         _ = self.menuBarDisplayMode
+        _ = self.menuBarCompactHiddenProviders
         _ = self.historicalTrackingEnabled
         _ = self.showAllTokenAccountsInMenu
         _ = self.menuBarMetricPreferencesRaw

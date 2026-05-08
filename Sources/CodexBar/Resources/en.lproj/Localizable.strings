@@ -128,6 +128,11 @@
 "menuBarUsageDisplay.compactBars" = "Option 2: Compact bars";
 "menuBarUsageDisplay.iconPercent.description" = "Show the current provider icon with percent/pace text.";
 "menuBarUsageDisplay.compactBars.description" = "Show up to five providers as compact usage bars across two rows.";
+"Compact bar providers" = "Compact bar providers";
+"Select Compact bars to choose which providers appear there." = "Select Compact bars to choose which providers appear there.";
+"No enabled providers available for compact bars." = "No enabled providers available for compact bars.";
+"Show in compact bars" = "Show in compact bars";
+"Menu Bar Extra still shows every enabled provider." = "Menu Bar Extra still shows every enabled provider.";
 "Display mode" = "Display mode";
 "Choose what to show in the menu bar (Pace shows usage vs. expected)." = "Choose what to show in the menu bar (Pace shows usage vs. expected).";
 "Menu content" = "Menu content";

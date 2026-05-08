@@ -202,6 +202,16 @@ extension SettingsStore {
         var weeklyLimitRecovery: Bool
     }
 
+    private struct MenuBarDefaults {
+        var usageBarsShowUsed: Bool
+        var resetTimesShowAbsolute: Bool
+        var resetTimeDisplayStyleRaw: String
+        var showsBrandIconWithPercent: Bool
+        var usageDisplayStyleRaw: String
+        var displayModeRaw: String
+        var compactHiddenProvidersRaw: [String]
+    }
+
     private static func inferredInitialOpenAIWebAccessEnabled(
         config: CodexBarConfig,
         hadExistingConfig: Bool) -> Bool
@@ -262,6 +272,35 @@ extension SettingsStore {
             weeklyLimitRecovery: weeklyRecovery)
     }
 
+    private static func resolvedMenuBarDefaults(userDefaults: UserDefaults) -> MenuBarDefaults {
+        let usageBarsShowUsed = userDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
+        let resetTimesShowAbsolute = userDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
+        let resetTimeDisplayStyleRaw = {
+            if let raw = userDefaults.string(forKey: "resetTimeDisplayStyle"),
+               ResetTimeDisplayStyle(rawValue: raw) != nil
+            {
+                return raw
+            }
+            return resetTimesShowAbsolute
+                ? ResetTimeDisplayStyle.absolute.rawValue
+                : ResetTimeDisplayStyle.countdown.rawValue
+        }()
+        let showsBrandIconWithPercent = userDefaults.object(
+            forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? false
+        let displayModeRaw = userDefaults.string(forKey: "menuBarDisplayMode") ?? MenuBarDisplayMode.percent.rawValue
+        let compactHiddenProvidersRaw = userDefaults.array(
+            forKey: "menuBarCompactHiddenProviders") as? [String] ?? []
+        return MenuBarDefaults(
+            usageBarsShowUsed: usageBarsShowUsed,
+            resetTimesShowAbsolute: resetTimesShowAbsolute,
+            resetTimeDisplayStyleRaw: resetTimeDisplayStyleRaw,
+            showsBrandIconWithPercent: showsBrandIconWithPercent,
+            usageDisplayStyleRaw: userDefaults.string(forKey: "menuBarUsageDisplayStyle")
+                ?? MenuBarUsageDisplayStyle.iconPercent.rawValue,
+            displayModeRaw: displayModeRaw,
+            compactHiddenProvidersRaw: compactHiddenProvidersRaw)
+    }
+
     private static func loadDefaultsState(userDefaults: UserDefaults) -> SettingsDefaultsState {
         let refreshDefault = userDefaults.string(forKey: "refreshFrequency")
             .flatMap(RefreshFrequency.init(rawValue:))
@@ -303,24 +342,7 @@ extension SettingsStore {
         let resolvedWeeklyLimitUsageThresholds = self.resolvedUsageThresholds(
             userDefaults: userDefaults,
             key: "weeklyLimitUsageThresholds")
-        let usageBarsShowUsed = userDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
-        let resetTimesShowAbsolute = userDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
-        let resetTimeDisplayStyleRaw = {
-            if let raw = userDefaults.string(forKey: "resetTimeDisplayStyle"),
-               ResetTimeDisplayStyle(rawValue: raw) != nil
-            {
-                return raw
-            }
-            return resetTimesShowAbsolute
-                ? ResetTimeDisplayStyle.absolute.rawValue
-                : ResetTimeDisplayStyle.countdown.rawValue
-        }()
-        let menuBarShowsBrandIconWithPercent = userDefaults.object(
-            forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? false
-        let menuBarUsageDisplayStyleRaw = userDefaults.string(forKey: "menuBarUsageDisplayStyle")
-            ?? MenuBarUsageDisplayStyle.iconPercent.rawValue
-        let menuBarDisplayModeRaw = userDefaults.string(forKey: "menuBarDisplayMode")
-            ?? MenuBarDisplayMode.percent.rawValue
+        let menuBarDefaults = self.resolvedMenuBarDefaults(userDefaults: userDefaults)
         let historicalTrackingEnabled = userDefaults.object(forKey: "historicalTrackingEnabled") as? Bool ?? false
         let showAllTokenAccountsInMenu = userDefaults.object(forKey: "showAllTokenAccountsInMenu") as? Bool ?? false
         let storedPreferences = userDefaults.dictionary(forKey: "menuBarMetricPreferences") as? [String: String] ?? [:]
@@ -385,12 +407,13 @@ extension SettingsStore {
             weeklyLimitThresholdNotificationsEnabled: notificationDefaults.weeklyLimitThreshold,
             weeklyLimitRecoveryNotificationsEnabled: notificationDefaults.weeklyLimitRecovery,
             weeklyLimitUsageThresholdsRaw: resolvedWeeklyLimitUsageThresholds,
-            usageBarsShowUsed: usageBarsShowUsed,
-            resetTimesShowAbsolute: resetTimesShowAbsolute,
-            resetTimeDisplayStyleRaw: resetTimeDisplayStyleRaw,
-            menuBarShowsBrandIconWithPercent: menuBarShowsBrandIconWithPercent,
-            menuBarUsageDisplayStyleRaw: menuBarUsageDisplayStyleRaw,
-            menuBarDisplayModeRaw: menuBarDisplayModeRaw,
+            usageBarsShowUsed: menuBarDefaults.usageBarsShowUsed,
+            resetTimesShowAbsolute: menuBarDefaults.resetTimesShowAbsolute,
+            resetTimeDisplayStyleRaw: menuBarDefaults.resetTimeDisplayStyleRaw,
+            menuBarShowsBrandIconWithPercent: menuBarDefaults.showsBrandIconWithPercent,
+            menuBarUsageDisplayStyleRaw: menuBarDefaults.usageDisplayStyleRaw,
+            menuBarDisplayModeRaw: menuBarDefaults.displayModeRaw,
+            menuBarCompactHiddenProvidersRaw: menuBarDefaults.compactHiddenProvidersRaw,
             historicalTrackingEnabled: historicalTrackingEnabled,
             showAllTokenAccountsInMenu: showAllTokenAccountsInMenu,
             menuBarMetricPreferencesRaw: resolvedPreferences,

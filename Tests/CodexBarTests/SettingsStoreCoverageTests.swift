@@ -80,6 +80,30 @@ struct SettingsStoreCoverageTests {
     }
 
     @Test
+    func `compact bar provider visibility defaults to shown and persists opt out`() throws {
+        let suite = "SettingsStoreCoverageTests-compact-bar-provider-visibility-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+
+        let first = Self.makeSettingsStore(userDefaults: defaults, configStore: configStore)
+        #expect(first.isProviderShownInCompactBars(.codex))
+        #expect(first.compactBarProviders(activeProviders: [.codex, .claude, .gemini]) == [.codex, .claude, .gemini])
+
+        first.setProviderShownInCompactBars(.claude, isShown: false)
+        #expect(!first.isProviderShownInCompactBars(.claude))
+        #expect(first.isProviderShownInCompactBars(.codex))
+        #expect(first.compactBarProviders(activeProviders: [.codex, .claude, .gemini]) == [.codex, .gemini])
+
+        let second = Self.makeSettingsStore(userDefaults: defaults, configStore: configStore)
+        #expect(!second.isProviderShownInCompactBars(.claude))
+        #expect(second.compactBarProviders(activeProviders: [.codex, .claude, .gemini]) == [.codex, .gemini])
+
+        second.setProviderShownInCompactBars(.claude, isShown: true)
+        #expect(second.compactBarProviders(activeProviders: [.codex, .claude]) == [.codex, .claude])
+    }
+
+    @Test
     func `reset time display style migrates legacy absolute preference`() throws {
         let suite = "SettingsStoreCoverageTests-reset-time-display-style-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

@@ -254,6 +254,41 @@ extension SettingsStore {
         set { self.menuBarDisplayModeRaw = newValue.rawValue }
     }
 
+    private var menuBarCompactHiddenProvidersRaw: [String] {
+        get { self.defaultsState.menuBarCompactHiddenProvidersRaw }
+        set {
+            self.defaultsState.menuBarCompactHiddenProvidersRaw = newValue
+            self.userDefaults.set(newValue, forKey: "menuBarCompactHiddenProviders")
+        }
+    }
+
+    var menuBarCompactHiddenProviders: [UsageProvider] {
+        get { Self.decodeProviders(self.menuBarCompactHiddenProvidersRaw) }
+        set {
+            let normalized = Self.normalizeProviders(newValue)
+            self.menuBarCompactHiddenProvidersRaw = normalized.map(\.rawValue)
+        }
+    }
+
+    func isProviderShownInCompactBars(_ provider: UsageProvider) -> Bool {
+        !Set(self.menuBarCompactHiddenProviders).contains(provider)
+    }
+
+    func setProviderShownInCompactBars(_ provider: UsageProvider, isShown: Bool) {
+        var hidden = Set(self.menuBarCompactHiddenProviders)
+        if isShown {
+            hidden.remove(provider)
+        } else {
+            hidden.insert(provider)
+        }
+        self.menuBarCompactHiddenProviders = UsageProvider.allCases.filter { hidden.contains($0) }
+    }
+
+    func compactBarProviders(activeProviders: [UsageProvider]) -> [UsageProvider] {
+        let hidden = Set(self.menuBarCompactHiddenProviders)
+        return Self.normalizeProviders(activeProviders).filter { !hidden.contains($0) }
+    }
+
     var showAllTokenAccountsInMenu: Bool {
         get { self.defaultsState.showAllTokenAccountsInMenu }
         set {

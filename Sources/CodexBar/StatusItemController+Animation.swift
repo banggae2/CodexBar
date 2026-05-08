@@ -315,26 +315,28 @@ extension StatusItemController {
         if showBrandPercent,
            self.settings.menuBarUsageDisplayStyle == .compactBars
         {
-            let providers = self.store.enabledProvidersForDisplay()
+            let providers = self.settings.compactBarProviders(activeProviders: self.store.enabledProvidersForDisplay())
             let entries = self.menuBarCompactUsageEntries(for: providers)
-            let values = entries.map { entry in
-                MenuBarCompactUsageRenderer.percentText(for: entry)
-            }.joined(separator: ",")
-            let signature = [
-                "mode=compactBars",
-                "providers=\(entries.map(\.provider.rawValue).joined(separator: ","))",
-                "values=\(values)",
-                "showUsed=\(showUsed ? "1" : "0")",
-                "anim=\(needsAnimation ? "1" : "0")",
-            ].joined(separator: "|")
-            if self.shouldSkipMergedIconRender(signature) {
-                return true
+            if !entries.isEmpty {
+                let values = entries.map { entry in
+                    MenuBarCompactUsageRenderer.percentText(for: entry)
+                }.joined(separator: ",")
+                let signature = [
+                    "mode=compactBars",
+                    "providers=\(entries.map(\.provider.rawValue).joined(separator: ","))",
+                    "values=\(values)",
+                    "showUsed=\(showUsed ? "1" : "0")",
+                    "anim=\(needsAnimation ? "1" : "0")",
+                ].joined(separator: "|")
+                if self.shouldSkipMergedIconRender(signature) {
+                    return true
+                }
+                self.setButtonTitle(nil, for: button)
+                if let image = MenuBarCompactUsageRenderer.image(entries: entries) {
+                    self.setCompactStatusItemImage(image, for: self.statusItem)
+                }
+                return false
             }
-            self.setButtonTitle(nil, for: button)
-            if let image = MenuBarCompactUsageRenderer.image(entries: entries) {
-                self.setCompactStatusItemImage(image, for: self.statusItem)
-            }
-            return false
         }
 
         self.resetStatusItemLength(self.statusItem)
@@ -461,7 +463,8 @@ extension StatusItemController {
         let style: IconStyle = self.store.style(for: provider)
 
         if showBrandPercent,
-           self.settings.menuBarUsageDisplayStyle == .compactBars
+           self.settings.menuBarUsageDisplayStyle == .compactBars,
+           self.settings.isProviderShownInCompactBars(provider)
         {
             self.setButtonTitle(nil, for: button)
             if let image = MenuBarCompactUsageRenderer

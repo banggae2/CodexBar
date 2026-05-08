@@ -99,6 +99,11 @@ struct MenuBarCompactUsageRendererTests {
         #expect(controller.menuBarCompactUsageEntries(for: [.codex, .claude]).map {
             MenuBarCompactUsageRenderer.percentText(for: $0)
         } == ["40%/47%", "75%/25%"])
+
+        settings.setProviderShownInCompactBars(.claude, isShown: false)
+        let compactProviders = settings.compactBarProviders(activeProviders: store.enabledProvidersForDisplay())
+        #expect(compactProviders == [.codex])
+        #expect(controller.menuBarCompactUsageEntries(for: compactProviders).map(\.provider) == [.codex])
     }
 
     @Test

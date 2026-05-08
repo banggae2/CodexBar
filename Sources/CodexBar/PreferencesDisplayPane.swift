@@ -6,6 +6,7 @@ struct DisplayPane: View {
     private static let maxOverviewProviders = SettingsStore.mergedOverviewProviderLimit
 
     @State private var isOverviewProviderPopoverPresented = false
+    @State private var isCompactProviderPopoverPresented = false
     @Bindable var settings: SettingsStore
     @Bindable var store: UsageStore
 
@@ -61,6 +62,9 @@ struct DisplayPane: View {
                     }
                     .disabled(!self.settings.menuBarShowsBrandIconWithPercent)
                     .opacity(self.settings.menuBarShowsBrandIconWithPercent ? 1 : 0.5)
+                    self.compactProviderSelector
+                        .disabled(!self.isCompactProviderSelectorEnabled)
+                        .opacity(self.isCompactProviderSelectorEnabled ? 1 : 0.5)
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L10n.string("Display mode"))
@@ -144,13 +148,87 @@ struct DisplayPane: View {
                 }
                 self.reconcileOverviewSelection()
             }
+            .onChange(of: self.isCompactProviderSelectorEnabled) { _, isEnabled in
+                if !isEnabled {
+                    self.isCompactProviderPopoverPresented = false
+                }
+            }
             .onChange(of: self.activeProvidersInOrder) { _, _ in
                 if self.activeProvidersInOrder.isEmpty {
                     self.isOverviewProviderPopoverPresented = false
+                    self.isCompactProviderPopoverPresented = false
                 }
                 self.reconcileOverviewSelection()
             }
         }
+    }
+
+    private var compactProviderSelector: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(L10n.string("Compact bar providers"))
+                    .font(.body)
+                Spacer(minLength: 0)
+                if self.isCompactProviderSelectorEnabled {
+                    Button(L10n.string("Configure…")) {
+                        self.isCompactProviderPopoverPresented = true
+                    }
+                    .offset(y: 1)
+                    .popover(isPresented: self.$isCompactProviderPopoverPresented, arrowEdge: .bottom) {
+                        self.compactProviderPopover
+                    }
+                }
+            }
+
+            if !self.settings.menuBarShowsBrandIconWithPercent ||
+                self.settings.menuBarUsageDisplayStyle != .compactBars
+            {
+                Text(L10n.string("Select Compact bars to choose which providers appear there."))
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            } else if self.activeProvidersInOrder.isEmpty {
+                Text(L10n.string("No enabled providers available for compact bars."))
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text(self.compactProviderSelectionSummary)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+        }
+    }
+
+    private var compactProviderPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.string("Show in compact bars"))
+                .font(.headline)
+            Text(L10n.string("Menu Bar Extra still shows every enabled provider."))
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(self.activeProvidersInOrder, id: \.self) { provider in
+                        Toggle(
+                            isOn: Binding(
+                                get: { self.settings.isProviderShownInCompactBars(provider) },
+                                set: { isShown in
+                                    self.settings.setProviderShownInCompactBars(provider, isShown: isShown)
+                                })) {
+                            Text(self.providerDisplayName(provider))
+                                .font(.body)
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(self.isLastCompactProvider(provider))
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+        }
+        .padding(12)
+        .frame(width: 300)
     }
 
     private var overviewProviderSelector: some View {
@@ -223,6 +301,26 @@ struct DisplayPane: View {
 
     private var activeProvidersInOrder: [UsageProvider] {
         self.store.enabledProviders()
+    }
+
+    private var compactProviders: [UsageProvider] {
+        self.settings.compactBarProviders(activeProviders: self.activeProvidersInOrder)
+    }
+
+    private var isCompactProviderSelectorEnabled: Bool {
+        self.settings.menuBarShowsBrandIconWithPercent &&
+            self.settings.menuBarUsageDisplayStyle == .compactBars &&
+            !self.activeProvidersInOrder.isEmpty
+    }
+
+    private var compactProviderSelectionSummary: String {
+        let selectedNames = self.compactProviders.map(self.providerDisplayName)
+        guard !selectedNames.isEmpty else { return L10n.string("No providers selected") }
+        return selectedNames.joined(separator: ", ")
+    }
+
+    private func isLastCompactProvider(_ provider: UsageProvider) -> Bool {
+        self.settings.isProviderShownInCompactBars(provider) && self.compactProviders.count <= 1
     }
 
     private var overviewSelectedProviders: [UsageProvider] {
