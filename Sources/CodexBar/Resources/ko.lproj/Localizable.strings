@@ -62,6 +62,13 @@
 "Check provider status" = "공급자 상태 확인";
 "Polls OpenAI/Claude status pages and Google Workspace for Gemini/Antigravity, surfacing incidents in the icon and menu." = "OpenAI/Claude 상태 페이지와 Gemini/Antigravity용 Google Workspace를 확인해 장애를 아이콘과 메뉴에 표시합니다.";
 "App notifications" = "앱 알림";
+"Notification display" = "알림 표시";
+"Allowed" = "허용됨";
+"Not requested" = "요청 전";
+"Not allowed" = "허용 안 됨";
+"Checking..." = "확인 중...";
+"Allow" = "허용하기";
+"Open macOS Notifications settings for CodexBar." = "CodexBar의 macOS 알림 설정을 엽니다.";
 "Login success notifications" = "로그인 성공 알림";
 "Send an alert when a provider login flow finishes successfully." = "공급자 로그인 흐름이 성공적으로 끝나면 알립니다.";
 "Augment session expired" = "Augment 세션 만료";

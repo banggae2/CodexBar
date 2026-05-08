@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct NotificationThresholdEditorState: Equatable {
@@ -51,6 +52,7 @@ enum NotificationThresholdDisplayMode: Equatable {
 @MainActor
 struct NotificationsPane: View {
     @Bindable var settings: SettingsStore
+    @State private var notificationAuthorizationState: AppNotificationAuthorizationState = .unknown
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
@@ -76,6 +78,10 @@ struct NotificationsPane: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
+
+                    NotificationAuthorizationRow(
+                        state: self.notificationAuthorizationState,
+                        openSettings: self.openNotificationSettings)
 
                     PreferenceToggleRow(
                         title: L10n.string("Login success notifications"),
@@ -155,6 +161,12 @@ struct NotificationsPane: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
+        .task {
+            await self.refreshNotificationAuthorizationState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await self.refreshNotificationAuthorizationState() }
+        }
     }
 
     private var sessionThresholdEditorState: NotificationThresholdEditorState {
@@ -173,6 +185,51 @@ struct NotificationsPane: View {
 
     private var thresholdCopy: ThresholdCopy {
         ThresholdCopy(displayMode: self.thresholdDisplayMode)
+    }
+
+    private func openNotificationSettings() {
+        SystemSettingsLinks.openNotifications()
+    }
+
+    private func refreshNotificationAuthorizationState() async {
+        self.notificationAuthorizationState = await AppNotifications.shared.authorizationState()
+    }
+}
+
+@MainActor
+private struct NotificationAuthorizationRow: View {
+    let state: AppNotificationAuthorizationState
+    let openSettings: () -> Void
+
+    private var presentation: AppNotificationAuthorizationPresentation {
+        self.state.presentation
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(L10n.string("Notification display"))
+                .font(.body)
+
+            Spacer(minLength: 16)
+
+            if self.presentation.showsAllowAction {
+                Button {
+                    self.openSettings()
+                } label: {
+                    Text(L10n.string("Allow"))
+                        .frame(minWidth: 72)
+                }
+                .help(L10n.string("Open macOS Notifications settings for CodexBar."))
+            } else {
+                HStack(spacing: 5) {
+                    Image(systemName: self.presentation.statusSystemImage)
+                        .foregroundStyle(self.presentation.allowsNotificationDisplay ? .green : .secondary)
+                    Text(L10n.string(self.presentation.statusTitleKey))
+                        .foregroundStyle(.secondary)
+                }
+                .font(.footnote)
+            }
+        }
     }
 }
 

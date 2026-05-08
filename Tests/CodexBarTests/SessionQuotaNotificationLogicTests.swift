@@ -34,18 +34,18 @@ struct SessionQuotaNotificationLogicTests {
     }
 
     @Test
-    func `detects crossed usage thresholds once`() {
+    func `detects only highest crossed usage threshold per refresh`() {
         let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
             previousUsed: 79,
             currentUsed: 91,
             thresholds: [80, 90],
             alreadySent: [])
 
-        #expect(crossed == [80, 90])
+        #expect(crossed == [90])
     }
 
     @Test
-    func `does not repeat already sent usage thresholds`() {
+    func `does not repeat already sent usage thresholds when choosing highest crossed`() {
         let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
             previousUsed: 79,
             currentUsed: 91,
@@ -53,6 +53,17 @@ struct SessionQuotaNotificationLogicTests {
             alreadySent: [80])
 
         #expect(crossed == [90])
+    }
+
+    @Test
+    func `detects unsent usage threshold after previous sample lands exactly on threshold`() {
+        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
+            previousUsed: 50,
+            currentUsed: 51,
+            thresholds: [50],
+            alreadySent: [])
+
+        #expect(crossed == [50])
     }
 
     @Test

@@ -62,6 +62,13 @@
 "Check provider status" = "Check provider status";
 "Polls OpenAI/Claude status pages and Google Workspace for Gemini/Antigravity, surfacing incidents in the icon and menu." = "Polls OpenAI/Claude status pages and Google Workspace for Gemini/Antigravity, surfacing incidents in the icon and menu.";
 "App notifications" = "App notifications";
+"Notification display" = "Notification display";
+"Allowed" = "Allowed";
+"Not requested" = "Not requested";
+"Not allowed" = "Not allowed";
+"Checking..." = "Checking...";
+"Allow" = "Allow";
+"Open macOS Notifications settings for CodexBar." = "Open macOS Notifications settings for CodexBar.";
 "Login success notifications" = "Login success notifications";
 "Send an alert when a provider login flow finishes successfully." = "Send an alert when a provider login flow finishes successfully.";
 "Augment session expired" = "Augment session expired";

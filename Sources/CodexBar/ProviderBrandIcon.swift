@@ -16,10 +16,13 @@ enum ProviderBrandIcon {
         return Bundle.main
     }()
 
-    static func image(for provider: UsageProvider) -> NSImage? {
+    static func resourceURL(for provider: UsageProvider) -> URL? {
         let baseName = ProviderDescriptorRegistry.descriptor(for: provider).branding.iconResourceName
-        guard let bundle = self.resourceBundle,
-              let url = bundle.url(forResource: baseName, withExtension: "svg"),
+        return self.resourceBundle?.url(forResource: baseName, withExtension: "svg")
+    }
+
+    static func image(for provider: UsageProvider) -> NSImage? {
+        guard let url = self.resourceURL(for: provider),
               let image = NSImage(contentsOf: url)
         else {
             return nil

@@ -44,12 +44,14 @@ enum SessionQuotaNotificationLogic {
     {
         guard let currentUsed else { return [] }
         let normalized = self.normalizedUsageThresholds(thresholds)
-        return normalized.filter { threshold in
+        let crossed = normalized.filter { threshold in
             guard !alreadySent.contains(threshold) else { return false }
             guard currentUsed >= Double(threshold) else { return false }
             guard let previousUsed else { return true }
-            return previousUsed < Double(threshold)
+            let thresholdValue = Double(threshold)
+            return previousUsed < thresholdValue || (previousUsed == thresholdValue && currentUsed > previousUsed)
         }
+        return crossed.last.map { [$0] } ?? []
     }
 }
 
@@ -94,6 +96,6 @@ final class SessionQuotaNotifier: SessionQuotaNotifying {
         let transitionText = String(describing: transition)
         let idPrefix = "session-\(providerText)-\(transitionText)"
         self.logger.info("enqueuing", metadata: ["prefix": idPrefix])
-        AppNotifications.shared.post(idPrefix: idPrefix, title: title, body: body, badge: badge)
+        AppNotifications.shared.post(idPrefix: idPrefix, title: title, body: body, badge: badge, provider: provider)
     }
 }

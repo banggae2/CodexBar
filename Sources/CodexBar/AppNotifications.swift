@@ -2,6 +2,65 @@ import CodexBarCore
 import Foundation
 @preconcurrency import UserNotifications
 
+struct AppNotificationAuthorizationPresentation: Equatable {
+    let statusTitleKey: String
+    let statusSystemImage: String
+    let allowsNotificationDisplay: Bool
+    let showsAllowAction: Bool
+}
+
+enum AppNotificationAuthorizationState: Equatable {
+    case unknown
+    case notDetermined
+    case denied
+    case authorized
+    case provisional
+
+    init(status: UNAuthorizationStatus) {
+        switch status {
+        case .notDetermined:
+            self = .notDetermined
+        case .denied:
+            self = .denied
+        case .authorized:
+            self = .authorized
+        case .provisional:
+            self = .provisional
+        @unknown default:
+            self = .unknown
+        }
+    }
+
+    var presentation: AppNotificationAuthorizationPresentation {
+        switch self {
+        case .authorized, .provisional:
+            AppNotificationAuthorizationPresentation(
+                statusTitleKey: "Allowed",
+                statusSystemImage: "checkmark.circle.fill",
+                allowsNotificationDisplay: true,
+                showsAllowAction: false)
+        case .notDetermined:
+            AppNotificationAuthorizationPresentation(
+                statusTitleKey: "Not requested",
+                statusSystemImage: "questionmark.circle.fill",
+                allowsNotificationDisplay: false,
+                showsAllowAction: true)
+        case .denied:
+            AppNotificationAuthorizationPresentation(
+                statusTitleKey: "Not allowed",
+                statusSystemImage: "xmark.circle.fill",
+                allowsNotificationDisplay: false,
+                showsAllowAction: true)
+        case .unknown:
+            AppNotificationAuthorizationPresentation(
+                statusTitleKey: "Checking...",
+                statusSystemImage: "questionmark.circle.fill",
+                allowsNotificationDisplay: false,
+                showsAllowAction: false)
+        }
+    }
+}
+
 @MainActor
 final class AppNotifications {
     static let shared = AppNotifications()
@@ -19,7 +78,19 @@ final class AppNotifications {
         _ = self.ensureAuthorizationTask()
     }
 
-    func post(idPrefix: String, title: String, body: String, badge: NSNumber? = nil) {
+    func authorizationState() async -> AppNotificationAuthorizationState {
+        guard !Self.isRunningUnderTests else { return .unknown }
+        guard let status = await self.notificationAuthorizationStatus() else { return .unknown }
+        return AppNotificationAuthorizationState(status: status)
+    }
+
+    func post(
+        idPrefix: String,
+        title: String,
+        body: String,
+        badge: NSNumber? = nil,
+        provider: UsageProvider? = nil)
+    {
         guard !Self.isRunningUnderTests else { return }
         let center = self.centerProvider()
         let logger = self.logger
@@ -31,11 +102,11 @@ final class AppNotifications {
                 return
             }
 
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            content.badge = badge
+            let content = Self.notificationContent(
+                title: title,
+                body: body,
+                badge: badge,
+                provider: provider)
 
             let request = UNNotificationRequest(
                 identifier: "codexbar-\(idPrefix)-\(UUID().uuidString)",
@@ -50,6 +121,33 @@ final class AppNotifications {
                 logger.error("failed to post", metadata: ["prefix": idPrefix, "error": errorText])
             }
         }
+    }
+
+    static func notificationContent(
+        title: String,
+        body: String,
+        badge: NSNumber?,
+        provider: UsageProvider?,
+        attachmentURLProvider: (UsageProvider) -> URL? = { ProviderNotificationAttachment.fileURL(for: $0) })
+        -> UNMutableNotificationContent
+    {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.badge = badge
+
+        if let provider,
+           let url = attachmentURLProvider(provider),
+           let attachment = try? UNNotificationAttachment(
+               identifier: "provider-\(provider.rawValue)",
+               url: url,
+               options: nil)
+        {
+            content.attachments = [attachment]
+        }
+
+        return content
     }
 
     // MARK: - Private

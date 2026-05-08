@@ -14,12 +14,19 @@ struct UsageStoreSessionQuotaTransitionTests {
         }
     }
 
-    @Test
-    func `copilot switch from primary to secondary resets baseline`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-primary-secondary"),
+    private func makeSettings(suiteName: String) throws -> SettingsStore {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        return SettingsStore(
+            userDefaults: defaults,
+            configStore: testConfigStore(suiteName: suiteName),
             zaiTokenStore: NoopZaiTokenStore(),
             syntheticTokenStore: NoopSyntheticTokenStore())
+    }
+
+    @Test
+    func `copilot switch from primary to secondary resets baseline`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-primary-secondary")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaNotificationsEnabled = true
@@ -47,11 +54,8 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `copilot switch from secondary to primary resets baseline`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-secondary-primary"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `copilot switch from secondary to primary resets baseline`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-secondary-primary")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaNotificationsEnabled = true
@@ -79,11 +83,8 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `hundred percent threshold covers five hour session depletion`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-depleted-threshold"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `hundred percent threshold covers five hour session depletion`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-depleted-threshold")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = true
@@ -113,11 +114,71 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `depleted transition does not post separately when threshold alerts are disabled`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-depleted-disabled"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `usage threshold notification fires after prior sample lands exactly on threshold`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-exact-threshold")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = false
+        settings.sessionQuotaUsageThresholds = [50]
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 50, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+        settings.sessionQuotaThresholdNotificationsEnabled = true
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 51, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+
+        #expect(notifier.posts.map(\.transition) == [.usageThreshold(50)])
+    }
+
+    @Test
+    func `usage threshold notification posts only highest crossed threshold per refresh`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-highest-crossed")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = true
+        settings.sessionQuotaUsageThresholds = [50, 75]
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 45, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 80, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+
+        #expect(notifier.posts.map(\.transition) == [.usageThreshold(75)])
+    }
+
+    @Test
+    func `depleted transition does not post separately when threshold alerts are disabled`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-depleted-disabled")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = false
@@ -146,14 +207,12 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `usage threshold notification fires once per session window and resets after restore`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-threshold-reset"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `usage threshold notification fires once per session window and resets after restore`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-threshold-reset")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = true
+        settings.sessionQuotaNotificationsEnabled = true
         settings.sessionQuotaUsageThresholds = [80]
 
         let notifier = SessionQuotaNotifierSpy()
@@ -208,11 +267,8 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `weekly threshold notification is independent from five hour threshold setting`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-threshold"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `weekly threshold notification is independent from five hour threshold setting`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-threshold")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = false
@@ -243,11 +299,8 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `weekly recovery notification fires when depleted weekly limit becomes available`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-recovery"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `weekly recovery notification fires when depleted weekly limit becomes available`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-recovery")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = false
@@ -279,11 +332,9 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `weekly recovery notification respects disabled setting`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-recovery-disabled"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `weekly recovery notification respects disabled setting`() throws {
+        let settings = try self.makeSettings(
+            suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-recovery-disabled")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaThresholdNotificationsEnabled = false
@@ -315,11 +366,8 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `claude weekly primary fallback does not emit session quota notifications`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-claude-weekly"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `claude weekly primary fallback does not emit session quota notifications`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-claude-weekly")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
         settings.sessionQuotaNotificationsEnabled = true
@@ -347,14 +395,12 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `claude five hour primary still emits session quota notifications`() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "UsageStoreSessionQuotaTransitionTests-claude-session"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
+    func `claude five hour primary still emits session quota notifications`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-claude-session")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
-        settings.sessionQuotaNotificationsEnabled = true
+        settings.sessionQuotaThresholdNotificationsEnabled = true
+        settings.sessionQuotaUsageThresholds = [100]
 
         let notifier = SessionQuotaNotifierSpy()
         let store = UsageStore(
@@ -375,6 +421,6 @@ struct UsageStoreSessionQuotaTransitionTests {
             updatedAt: Date())
         store.handleSessionQuotaTransition(provider: .claude, snapshot: depleted)
 
-        #expect(notifier.posts.map(\.provider) == [.claude])
+        #expect(notifier.posts.map(\.transition) == [.usageThreshold(100)])
     }
 }
