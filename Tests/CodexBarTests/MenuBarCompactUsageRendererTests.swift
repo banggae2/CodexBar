@@ -78,6 +78,16 @@ struct MenuBarCompactUsageRendererTests {
         let codexSnapshot = UsageSnapshot(
             primary: RateWindow(usedPercent: 40, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
             secondary: RateWindow(usedPercent: 47, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+            extraRateWindows: [
+                NamedRateWindow(
+                    id: "codex_bengalfox-5h",
+                    title: "GPT-5.3-Codex-Spark 5h",
+                    window: RateWindow(usedPercent: 100, windowMinutes: 300, resetsAt: nil, resetDescription: nil)),
+                NamedRateWindow(
+                    id: "codex_bengalfox-weekly",
+                    title: "GPT-5.3-Codex-Spark weekly",
+                    window: RateWindow(usedPercent: 30, windowMinutes: 10080, resetsAt: nil, resetDescription: nil)),
+            ],
             updatedAt: Date())
         let claudeSnapshot = UsageSnapshot(
             primary: RateWindow(usedPercent: 75, windowMinutes: nil, resetsAt: nil, resetDescription: nil),

@@ -6,19 +6,45 @@ import FoundationNetworking
 public struct CodexUsageResponse: Decodable, Sendable {
     public let planType: PlanType?
     public let rateLimit: RateLimitDetails?
+    public let rateLimitsByLimitId: [String: NamedRateLimitDetails]?
     public let credits: CreditDetails?
 
     enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
+        case planTypeCamel = "planType"
         case rateLimit = "rate_limit"
+        case rateLimitCamel = "rateLimit"
+        case rateLimits
+        case rateLimitsByLimitId = "rate_limits_by_limit_id"
+        case rateLimitsByLimitIdCamel = "rateLimitsByLimitId"
         case credits
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.planType = try? container.decodeIfPresent(PlanType.self, forKey: .planType)
-        self.rateLimit = try? container.decodeIfPresent(RateLimitDetails.self, forKey: .rateLimit)
-        self.credits = try? container.decodeIfPresent(CreditDetails.self, forKey: .credits)
+        self.planType = Self.decodeFirst(PlanType.self, from: container, keys: [.planType, .planTypeCamel])
+        self.rateLimit = Self.decodeFirst(
+            RateLimitDetails.self,
+            from: container,
+            keys: [.rateLimit, .rateLimitCamel, .rateLimits])
+        self.rateLimitsByLimitId = Self.decodeFirst(
+            [String: NamedRateLimitDetails].self,
+            from: container,
+            keys: [.rateLimitsByLimitId, .rateLimitsByLimitIdCamel])
+        self.credits = Self.decodeFirst(CreditDetails.self, from: container, keys: [.credits])
+    }
+
+    private static func decodeFirst<T: Decodable>(
+        _ type: T.Type,
+        from container: KeyedDecodingContainer<CodingKeys>,
+        keys: [CodingKeys]) -> T?
+    {
+        for key in keys {
+            if let value = try? container.decodeIfPresent(type, forKey: key) {
+                return value
+            }
+        }
+        return nil
     }
 
     public enum PlanType: Sendable, Decodable, Equatable {
@@ -87,28 +113,42 @@ public struct CodexUsageResponse: Decodable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case primaryWindow = "primary_window"
+            case primaryWindowCamel = "primaryWindow"
+            case primary
             case secondaryWindow = "secondary_window"
+            case secondaryWindowCamel = "secondaryWindow"
+            case secondary
         }
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            let primaryHadValue = Self.hasNonNilValue(container: container, key: .primaryWindow)
-            do {
-                self.primaryWindow = try container.decodeIfPresent(WindowSnapshot.self, forKey: .primaryWindow)
-                self.primaryWindowDecodeFailed = false
-            } catch {
-                self.primaryWindow = nil
-                self.primaryWindowDecodeFailed = primaryHadValue
-            }
+            let primaryKeys: [CodingKeys] = [.primaryWindow, .primaryWindowCamel, .primary]
+            let secondaryKeys: [CodingKeys] = [.secondaryWindow, .secondaryWindowCamel, .secondary]
+            let primary = Self.decodeWindow(container: container, keys: primaryKeys)
+            self.primaryWindow = primary.window
+            self.primaryWindowDecodeFailed = primary.decodeFailed
 
-            let secondaryHadValue = Self.hasNonNilValue(container: container, key: .secondaryWindow)
-            do {
-                self.secondaryWindow = try container.decodeIfPresent(WindowSnapshot.self, forKey: .secondaryWindow)
-                self.secondaryWindowDecodeFailed = false
-            } catch {
-                self.secondaryWindow = nil
-                self.secondaryWindowDecodeFailed = secondaryHadValue
+            let secondary = Self.decodeWindow(container: container, keys: secondaryKeys)
+            self.secondaryWindow = secondary.window
+            self.secondaryWindowDecodeFailed = secondary.decodeFailed
+        }
+
+        private static func decodeWindow(
+            container: KeyedDecodingContainer<CodingKeys>,
+            keys: [CodingKeys]) -> (window: WindowSnapshot?, decodeFailed: Bool)
+        {
+            var hadValue = false
+            for key in keys {
+                hadValue = hadValue || Self.hasNonNilValue(container: container, key: key)
+                do {
+                    if let value = try container.decodeIfPresent(WindowSnapshot.self, forKey: key) {
+                        return (value, false)
+                    }
+                } catch {
+                    return (nil, hadValue)
+                }
             }
+            return (nil, hadValue)
         }
 
         private static func hasNonNilValue(
@@ -124,6 +164,60 @@ public struct CodexUsageResponse: Decodable, Sendable {
         }
     }
 
+    public struct NamedRateLimitDetails: Decodable, Sendable {
+        public let limitId: String?
+        public let limitName: String?
+        public let primaryWindow: WindowSnapshot?
+        public let secondaryWindow: WindowSnapshot?
+        public let limitSnapshot: WindowSnapshot?
+
+        enum CodingKeys: String, CodingKey {
+            case limitId = "limit_id"
+            case limitIdCamel = "limitId"
+            case limitName = "limit_name"
+            case limitNameCamel = "limitName"
+            case primaryWindow = "primary_window"
+            case primaryWindowCamel = "primaryWindow"
+            case primary
+            case secondaryWindow = "secondary_window"
+            case secondaryWindowCamel = "secondaryWindow"
+            case secondary
+            case limitSnapshot = "limit_snapshot"
+            case limitSnapshotCamel = "limitSnapshot"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.limitId = Self.decodeFirst(String.self, from: container, keys: [.limitId, .limitIdCamel])
+            self.limitName = Self.decodeFirst(String.self, from: container, keys: [.limitName, .limitNameCamel])
+            self.primaryWindow = Self.decodeFirst(
+                WindowSnapshot.self,
+                from: container,
+                keys: [.primaryWindow, .primaryWindowCamel, .primary])
+            self.secondaryWindow = Self.decodeFirst(
+                WindowSnapshot.self,
+                from: container,
+                keys: [.secondaryWindow, .secondaryWindowCamel, .secondary])
+            self.limitSnapshot = Self.decodeFirst(
+                WindowSnapshot.self,
+                from: container,
+                keys: [.limitSnapshot, .limitSnapshotCamel])
+        }
+
+        private static func decodeFirst<T: Decodable>(
+            _ type: T.Type,
+            from container: KeyedDecodingContainer<CodingKeys>,
+            keys: [CodingKeys]) -> T?
+        {
+            for key in keys {
+                if let value = try? container.decodeIfPresent(type, forKey: key) {
+                    return value
+                }
+            }
+            return nil
+        }
+    }
+
     public struct WindowSnapshot: Decodable, Sendable {
         public let usedPercent: Int
         public let resetAt: Int
@@ -131,8 +225,65 @@ public struct CodexUsageResponse: Decodable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case usedPercent = "used_percent"
+            case usedPercentCamel = "usedPercent"
             case resetAt = "reset_at"
+            case resetAtCamel = "resetAt"
+            case resetsAt
             case limitWindowSeconds = "limit_window_seconds"
+            case limitWindowSecondsCamel = "limitWindowSeconds"
+            case windowDurationMins
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.usedPercent = try Self.decodeFirst(
+                Int.self,
+                from: container,
+                keys: [.usedPercent, .usedPercentCamel])
+            self.resetAt = try Self.decodeFirst(
+                Int.self,
+                from: container,
+                keys: [.resetAt, .resetAtCamel, .resetsAt])
+            if let seconds = try Self.decodeFirstIfPresent(
+                Int.self,
+                from: container,
+                keys: [.limitWindowSeconds, .limitWindowSecondsCamel])
+            {
+                self.limitWindowSeconds = seconds
+            } else {
+                self.limitWindowSeconds = try Self.decodeFirst(
+                    Int.self,
+                    from: container,
+                    keys: [.windowDurationMins]) * 60
+            }
+        }
+
+        private static func decodeFirst<T: Decodable>(
+            _ type: T.Type,
+            from container: KeyedDecodingContainer<CodingKeys>,
+            keys: [CodingKeys]) throws -> T
+        {
+            if let value = try decodeFirstIfPresent(type, from: container, keys: keys) {
+                return value
+            }
+            throw DecodingError.keyNotFound(
+                keys[0],
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "Expected one of \(keys.map(\.stringValue).joined(separator: ", "))"))
+        }
+
+        private static func decodeFirstIfPresent<T: Decodable>(
+            _ type: T.Type,
+            from container: KeyedDecodingContainer<CodingKeys>,
+            keys: [CodingKeys]) throws -> T?
+        {
+            for key in keys {
+                if let value = try container.decodeIfPresent(type, forKey: key) {
+                    return value
+                }
+            }
+            return nil
         }
     }
 

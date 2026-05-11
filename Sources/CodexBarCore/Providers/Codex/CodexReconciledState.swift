@@ -3,17 +3,20 @@ import Foundation
 public struct CodexReconciledState: Sendable {
     public let session: RateWindow?
     public let weekly: RateWindow?
+    public let extraRateWindows: [NamedRateWindow]
     public let identity: ProviderIdentitySnapshot?
     public let updatedAt: Date
 
     public init(
         session: RateWindow?,
         weekly: RateWindow?,
+        extraRateWindows: [NamedRateWindow] = [],
         identity: ProviderIdentitySnapshot?,
         updatedAt: Date)
     {
         self.session = session
         self.weekly = weekly
+        self.extraRateWindows = extraRateWindows
         self.identity = identity
         self.updatedAt = updatedAt
     }
@@ -21,10 +24,16 @@ public struct CodexReconciledState: Sendable {
     public static func fromCLI(
         primary: RateWindow?,
         secondary: RateWindow?,
+        extraRateWindows: [NamedRateWindow] = [],
         identity: ProviderIdentitySnapshot?,
         updatedAt: Date = Date()) -> CodexReconciledState?
     {
-        self.make(primary: primary, secondary: secondary, identity: identity, updatedAt: updatedAt)
+        self.make(
+            primary: primary,
+            secondary: secondary,
+            extraRateWindows: extraRateWindows,
+            identity: identity,
+            updatedAt: updatedAt)
     }
 
     public static func fromOAuth(
@@ -35,6 +44,7 @@ public struct CodexReconciledState: Sendable {
         self.make(
             primary: self.makeWindow(response.rateLimit?.primaryWindow),
             secondary: self.makeWindow(response.rateLimit?.secondaryWindow),
+            extraRateWindows: self.extraRateWindows(from: response),
             identity: self.oauthIdentity(response: response, credentials: credentials),
             updatedAt: updatedAt)
     }
@@ -56,6 +66,7 @@ public struct CodexReconciledState: Sendable {
         return self.make(
             primary: snapshot.primaryLimit,
             secondary: snapshot.secondaryLimit,
+            extraRateWindows: snapshot.extraRateWindows,
             identity: identity,
             updatedAt: snapshot.updatedAt)
     }
@@ -65,6 +76,7 @@ public struct CodexReconciledState: Sendable {
             primary: self.session,
             secondary: self.weekly,
             tertiary: nil,
+            extraRateWindows: self.extraRateWindows.isEmpty ? nil : self.extraRateWindows,
             updatedAt: self.updatedAt,
             identity: self.identity)
     }
@@ -83,19 +95,46 @@ public struct CodexReconciledState: Sendable {
     private static func make(
         primary: RateWindow?,
         secondary: RateWindow?,
+        extraRateWindows: [NamedRateWindow],
         identity: ProviderIdentitySnapshot?,
         updatedAt: Date) -> CodexReconciledState?
     {
         let normalized = CodexRateWindowNormalizer.normalize(primary: primary, secondary: secondary)
-        guard normalized.primary != nil || normalized.secondary != nil else {
+        guard normalized.primary != nil || normalized.secondary != nil || !extraRateWindows.isEmpty else {
             return nil
         }
 
         return CodexReconciledState(
             session: normalized.primary,
             weekly: normalized.secondary,
+            extraRateWindows: extraRateWindows,
             identity: identity,
             updatedAt: updatedAt)
+    }
+
+    static func extraRateWindows(from response: CodexUsageResponse) -> [NamedRateWindow] {
+        guard let buckets = response.rateLimitsByLimitId, !buckets.isEmpty else { return [] }
+
+        return buckets.keys.sorted().flatMap { key -> [NamedRateWindow] in
+            guard key != "codex",
+                  let bucket = buckets[key],
+                  let limitName = UsageFetcher.normalizedCodexAccountField(bucket.limitName)
+            else {
+                return []
+            }
+
+            let normalized = CodexRateWindowNormalizer.normalize(
+                primary: self.makeWindow(bucket.primaryWindow ?? bucket.limitSnapshot),
+                secondary: self.makeWindow(bucket.secondaryWindow))
+            return [
+                normalized.primary.map {
+                    NamedRateWindow(id: "\(key)-5h", title: "\(limitName) 5h", window: $0)
+                },
+                normalized.secondary.map {
+                    NamedRateWindow(id: "\(key)-weekly", title: "\(limitName) weekly", window: $0)
+                },
+            ].compactMap(\.self)
+        }
     }
 
     private static func makeWindow(_ window: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {
