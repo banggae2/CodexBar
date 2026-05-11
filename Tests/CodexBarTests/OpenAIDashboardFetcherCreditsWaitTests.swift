@@ -283,6 +283,35 @@ struct OpenAIDashboardFetcherCreditsWaitTests {
             "has_credits": true,
             "unlimited": false,
             "balance": 42.5
+          },
+          "rate_limits_by_limit_id": {
+            "codex": {
+              "limit_id": "codex",
+              "primary_window": {
+                "used_percent": 12,
+                "reset_at": 1700003600,
+                "limit_window_seconds": 18000
+              },
+              "secondary_window": {
+                "used_percent": 34,
+                "reset_at": 1700604800,
+                "limit_window_seconds": 604800
+              }
+            },
+            "codex_bengalfox": {
+              "limit_id": "codex_bengalfox",
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "primary_window": {
+                "used_percent": 100,
+                "reset_at": 1700007200,
+                "limit_window_seconds": 18000
+              },
+              "secondary_window": {
+                "used_percent": 30,
+                "reset_at": 1701209600,
+                "limit_window_seconds": 604800
+              }
+            }
           }
         }
         """
@@ -293,9 +322,96 @@ struct OpenAIDashboardFetcherCreditsWaitTests {
         #expect(data.primaryLimit?.windowMinutes == 300)
         #expect(data.secondaryLimit?.usedPercent == 34)
         #expect(data.secondaryLimit?.windowMinutes == 10080)
+        #expect(data.extraRateWindows.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(data.extraRateWindows.map(\.window.usedPercent) == [100, 30])
         #expect(data.creditsRemaining == 42.5)
         #expect(data.accountPlan == "pro")
         #expect(data.hasUsageData)
+
+        let snapshot = OpenAIDashboardSnapshot(
+            signedInEmail: "user@example.com",
+            codeReviewRemainingPercent: nil,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            primaryLimit: data.primaryLimit,
+            secondaryLimit: data.secondaryLimit,
+            extraRateWindows: data.extraRateWindows,
+            creditsRemaining: data.creditsRemaining,
+            accountPlan: data.accountPlan,
+            updatedAt: Date(timeIntervalSince1970: 1))
+            .toUsageSnapshot()
+        #expect(snapshot?.extraRateWindows?.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+    }
+
+    @Test
+    func `usage api data maps camel case named rate limit buckets`() throws {
+        let json = """
+        {
+          "planType": "pro",
+          "rateLimits": {
+            "primary": {
+              "usedPercent": 12,
+              "resetsAt": 1700003600,
+              "windowDurationMins": 300
+            },
+            "secondary": {
+              "usedPercent": 34,
+              "resetsAt": 1700604800,
+              "windowDurationMins": 10080
+            }
+          },
+          "rateLimitsByLimitId": {
+            "codex": {
+              "limitId": "codex",
+              "primary": {
+                "usedPercent": 12,
+                "resetsAt": 1700003600,
+                "windowDurationMins": 300
+              },
+              "secondary": {
+                "usedPercent": 34,
+                "resetsAt": 1700604800,
+                "windowDurationMins": 10080
+              }
+            },
+            "codex_bengalfox": {
+              "limitId": "codex_bengalfox",
+              "limitName": "GPT-5.3-Codex-Spark",
+              "primary": {
+                "usedPercent": 100,
+                "resetsAt": 1700007200,
+                "windowDurationMins": 300
+              },
+              "secondary": {
+                "usedPercent": 30,
+                "resetsAt": 1701209600,
+                "windowDurationMins": 10080
+              }
+            }
+          }
+        }
+        """
+        let response = try CodexOAuthUsageFetcher._decodeUsageResponseForTesting(Data(json.utf8))
+        let data = OpenAIDashboardFetcher.dashboardAPIData(from: response)
+
+        #expect(data.primaryLimit?.usedPercent == 12)
+        #expect(data.primaryLimit?.windowMinutes == 300)
+        #expect(data.secondaryLimit?.usedPercent == 34)
+        #expect(data.secondaryLimit?.windowMinutes == 10080)
+        #expect(data.extraRateWindows.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(data.extraRateWindows.map(\.window.usedPercent) == [100, 30])
+        #expect(data.accountPlan == "pro")
     }
 
     @Test

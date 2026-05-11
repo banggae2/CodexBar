@@ -387,9 +387,12 @@ private enum RPCAccountDetails: Decodable {
 
 private struct RPCRateLimitsResponse: Decodable, Encodable {
     let rateLimits: RPCRateLimitSnapshot
+    let rateLimitsByLimitId: [String: RPCRateLimitSnapshot]?
 }
 
 private struct RPCRateLimitSnapshot: Decodable, Encodable {
+    let limitId: String?
+    let limitName: String?
     let primary: RPCRateLimitWindow?
     let secondary: RPCRateLimitWindow?
     let credits: RPCCreditsSnapshot?
@@ -746,7 +749,7 @@ public struct UsageFetcher: Sendable {
             // The app-server answers on a single stdout stream, so keep requests
             // serialized to avoid starving one reader when multiple awaiters race
             // for the same pipe.
-            let limits = try await rpc.fetchRateLimits().rateLimits
+            let limits = try await rpc.fetchRateLimits()
             let account = try? await rpc.fetchAccount()
             let identity = ProviderIdentitySnapshot(
                 providerID: .codex,
@@ -757,12 +760,8 @@ public struct UsageFetcher: Sendable {
                 loginMethod: account?.account.flatMap { details in
                     if case let .chatgpt(_, plan) = details { plan } else { nil }
                 })
-            let usage = CodexReconciledState.fromCLI(
-                primary: Self.makeWindow(from: limits.primary),
-                secondary: Self.makeWindow(from: limits.secondary),
-                identity: identity)?
-                .toUsageSnapshot()
-            let credits = Self.makeCredits(from: limits.credits)
+            let usage = Self.makeUsageSnapshot(from: limits, identity: identity)
+            let credits = Self.makeCredits(from: limits.rateLimits.credits)
             guard usage != nil || credits != nil else {
                 throw UsageError.noRateLimitsFound
             }
@@ -843,6 +842,46 @@ public struct UsageFetcher: Sendable {
             windowMinutes: rpc.windowDurationMins,
             resetsAt: resetsAtDate,
             resetDescription: resetDescription)
+    }
+
+    private static func makeUsageSnapshot(
+        from response: RPCRateLimitsResponse,
+        identity: ProviderIdentitySnapshot?) -> UsageSnapshot?
+    {
+        CodexReconciledState.fromCLI(
+            primary: self.makeWindow(from: response.rateLimits.primary),
+            secondary: self.makeWindow(from: response.rateLimits.secondary),
+            extraRateWindows: self.makeExtraRateWindows(from: response),
+            identity: identity)?
+            .toUsageSnapshot()
+    }
+
+    private static func makeExtraRateWindows(from response: RPCRateLimitsResponse) -> [NamedRateWindow] {
+        guard let buckets = response.rateLimitsByLimitId, !buckets.isEmpty else { return [] }
+
+        let baseLimitID = response.rateLimits.limitId
+        return buckets.keys.sorted().flatMap { key -> [NamedRateWindow] in
+            guard key != baseLimitID,
+                  key != "codex",
+                  buckets[key]?.limitId != baseLimitID,
+                  let bucket = buckets[key],
+                  let limitName = self.normalizedCodexAccountField(bucket.limitName)
+            else {
+                return []
+            }
+
+            let normalized = CodexRateWindowNormalizer.normalize(
+                primary: self.makeWindow(from: bucket.primary),
+                secondary: self.makeWindow(from: bucket.secondary))
+            return [
+                normalized.primary.map {
+                    NamedRateWindow(id: "\(key)-5h", title: "\(limitName) 5h", window: $0)
+                },
+                normalized.secondary.map {
+                    NamedRateWindow(id: "\(key)-weekly", title: "\(limitName) weekly", window: $0)
+                },
+            ].compactMap(\.self)
+        }
     }
 
     private static func makeWindow(from response: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {
@@ -955,7 +994,7 @@ public struct UsageFetcher: Sendable {
         return nil
     }
 
-    private static func normalizedCodexAccountField(_ value: String?) -> String? {
+    static func normalizedCodexAccountField(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
         }
@@ -1020,6 +1059,14 @@ extension UsageFetcher {
 
     public static func _recoverCodexRPCCreditsFromErrorForTesting(_ message: String) -> CreditsSnapshot? {
         self.recoverCreditsFromRPCError(RPCWireError.requestFailed(message))
+    }
+
+    public static func _mapCodexRPCLimitsResponseForTesting(_ data: Data) throws -> UsageSnapshot {
+        let response = try JSONDecoder().decode(RPCRateLimitsResponse.self, from: data)
+        guard let snapshot = self.makeUsageSnapshot(from: response, identity: nil) else {
+            throw UsageError.noRateLimitsFound
+        }
+        return snapshot
     }
 
     private static func makeTestingWindow(

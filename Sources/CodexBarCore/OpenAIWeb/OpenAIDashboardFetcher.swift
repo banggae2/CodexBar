@@ -53,6 +53,7 @@ public struct OpenAIDashboardFetcher {
         let breakdown: [OpenAIDashboardDailyBreakdown]
         let usageBreakdown: [OpenAIDashboardDailyBreakdown]
         let rateLimits: (primary: RateWindow?, secondary: RateWindow?)
+        let extraRateWindows: [NamedRateWindow]
         let creditsRemaining: Double?
         let accountPlan: String?
     }
@@ -65,6 +66,7 @@ public struct OpenAIDashboardFetcher {
         let breakdown: [OpenAIDashboardDailyBreakdown]
         let usageBreakdown: [OpenAIDashboardDailyBreakdown]
         let rateLimits: (primary: RateWindow?, secondary: RateWindow?)
+        let extraRateWindows: [NamedRateWindow]
         let creditsRemaining: Double?
         let accountPlan: String?
         let hasDashboardPageSignal: Bool
@@ -84,6 +86,7 @@ public struct OpenAIDashboardFetcher {
             creditsPurchaseURL: components.scrape.creditsPurchaseURL,
             primaryLimit: components.rateLimits.primary,
             secondaryLimit: components.rateLimits.secondary,
+            extraRateWindows: components.extraRateWindows,
             creditsRemaining: components.creditsRemaining,
             accountPlan: components.accountPlan,
             updatedAt: Date())
@@ -103,6 +106,7 @@ public struct OpenAIDashboardFetcher {
         let rateLimits = (
             primary: apiData?.primaryLimit ?? parsedRateLimits.primary,
             secondary: apiData?.secondaryLimit ?? parsedRateLimits.secondary)
+        let extraRateWindows = apiData?.extraRateWindows ?? []
         let codeReviewLimit = OpenAIDashboardParser.parseCodeReviewLimit(bodyText: bodyText)
         let parsedCreditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
         let creditsRemaining = apiData?.creditsRemaining ?? parsedCreditsRemaining
@@ -131,6 +135,7 @@ public struct OpenAIDashboardFetcher {
             breakdown: breakdown,
             usageBreakdown: usageBreakdown,
             rateLimits: rateLimits,
+            extraRateWindows: extraRateWindows,
             creditsRemaining: creditsRemaining,
             accountPlan: accountPlan,
             hasDashboardPageSignal: self.hasAnyDashboardSignal(
@@ -142,11 +147,13 @@ public struct OpenAIDashboardFetcher {
     struct DashboardAPIData {
         let primaryLimit: RateWindow?
         let secondaryLimit: RateWindow?
+        let extraRateWindows: [NamedRateWindow]
         let creditsRemaining: Double?
         let accountPlan: String?
 
         var hasUsageData: Bool {
-            self.primaryLimit != nil || self.secondaryLimit != nil || self.creditsRemaining != nil
+            self.primaryLimit != nil || self.secondaryLimit != nil || !self.extraRateWindows.isEmpty ||
+                self.creditsRemaining != nil
         }
     }
 
@@ -361,6 +368,7 @@ public struct OpenAIDashboardFetcher {
                     breakdown: dashboardData.breakdown,
                     usageBreakdown: usageBreakdown,
                     rateLimits: dashboardData.rateLimits,
+                    extraRateWindows: dashboardData.extraRateWindows,
                     creditsRemaining: dashboardData.creditsRemaining,
                     accountPlan: dashboardData.accountPlan))
             }
@@ -690,6 +698,7 @@ public struct OpenAIDashboardFetcher {
         DashboardAPIData(
             primaryLimit: self.rateWindow(from: response.rateLimit?.primaryWindow),
             secondaryLimit: self.rateWindow(from: response.rateLimit?.secondaryWindow),
+            extraRateWindows: CodexReconciledState.extraRateWindows(from: response),
             creditsRemaining: response.credits?.balance,
             accountPlan: response.planType?.rawValue)
     }

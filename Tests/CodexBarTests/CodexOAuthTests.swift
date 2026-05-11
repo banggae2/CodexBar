@@ -149,6 +149,72 @@ struct CodexOAuthTests {
     }
 
     @Test
+    func `maps named O auth limit buckets into extra rate windows`() throws {
+        let json = """
+        {
+          "rate_limit": {
+            "primary_window": {
+              "used_percent": 34,
+              "reset_at": 1778501492,
+              "limit_window_seconds": 18000
+            },
+            "secondary_window": {
+              "used_percent": 59,
+              "reset_at": 1778590095,
+              "limit_window_seconds": 604800
+            }
+          },
+          "rate_limits_by_limit_id": {
+            "codex": {
+              "limit_id": "codex",
+              "primary_window": {
+                "used_percent": 34,
+                "reset_at": 1778501492,
+                "limit_window_seconds": 18000
+              },
+              "secondary_window": {
+                "used_percent": 59,
+                "reset_at": 1778590095,
+                "limit_window_seconds": 604800
+              }
+            },
+            "codex_bengalfox": {
+              "limit_id": "codex_bengalfox",
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "primary_window": {
+                "used_percent": 100,
+                "reset_at": 1778502228,
+                "limit_window_seconds": 18000
+              },
+              "secondary_window": {
+                "used_percent": 30,
+                "reset_at": 1779089028,
+                "limit_window_seconds": 604800
+              }
+            }
+          }
+        }
+        """
+        let creds = CodexOAuthCredentials(
+            accessToken: "access",
+            refreshToken: "refresh",
+            idToken: nil,
+            accountId: nil,
+            lastRefresh: Date())
+
+        let mapped = try CodexOAuthFetchStrategy._mapUsageForTesting(Data(json.utf8), credentials: creds)
+        let snapshot = try #require(mapped)
+
+        #expect(snapshot.primary?.usedPercent == 34)
+        #expect(snapshot.secondary?.usedPercent == 59)
+        #expect(snapshot.extraRateWindows?.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(snapshot.extraRateWindows?.map(\.window.usedPercent) == [100, 30])
+    }
+
+    @Test
     func `maps free weekly only window into secondary`() throws {
         let json = """
         {
