@@ -106,14 +106,20 @@ public struct OpenAIDashboardFetcher {
         let rateLimits = (
             primary: apiData?.primaryLimit ?? parsedRateLimits.primary,
             secondary: apiData?.secondaryLimit ?? parsedRateLimits.secondary)
-        let extraRateWindows = apiData?.extraRateWindows ?? []
+        let parsedExtraRateWindows = OpenAIDashboardParser.parseExtraRateLimits(bodyText: bodyText)
+        let extraRateWindows = if let apiExtras = apiData?.extraRateWindows, !apiExtras.isEmpty {
+            apiExtras
+        } else {
+            parsedExtraRateWindows
+        }
         let codeReviewLimit = OpenAIDashboardParser.parseCodeReviewLimit(bodyText: bodyText)
         let parsedCreditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
         let creditsRemaining = apiData?.creditsRemaining ?? parsedCreditsRemaining
         let parsedAccountPlan = scrape.bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
         let accountPlan = parsedAccountPlan ?? apiData?.accountPlan
-        let hasParsedUsageLimits = parsedRateLimits.primary != nil || parsedRateLimits.secondary != nil
-        let hasUsageLimits = rateLimits.primary != nil || rateLimits.secondary != nil
+        let hasParsedUsageLimits = parsedRateLimits.primary != nil || parsedRateLimits.secondary != nil ||
+            !parsedExtraRateWindows.isEmpty
+        let hasUsageLimits = rateLimits.primary != nil || rateLimits.secondary != nil || !extraRateWindows.isEmpty
         let hasDashboardPageData = self.hasReturnableDashboardData(
             codeReview: codeReview,
             events: events,
@@ -462,6 +468,7 @@ public struct OpenAIDashboardFetcher {
                 scrape.creditsHeaderPresent ||
                 OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText) != nil ||
                 OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText) != nil ||
+                !OpenAIDashboardParser.parseExtraRateLimits(bodyText: bodyText).isEmpty ||
                 rateLimits.primary != nil ||
                 rateLimits.secondary != nil
 

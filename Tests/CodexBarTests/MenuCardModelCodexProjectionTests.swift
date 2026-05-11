@@ -24,6 +24,24 @@ struct MenuCardModelCodexProjectionTests {
                 windowMinutes: 10080,
                 resetsAt: now.addingTimeInterval(6000),
                 resetDescription: nil),
+            extraRateWindows: [
+                NamedRateWindow(
+                    id: "gpt-5-3-codex-spark-5h",
+                    title: "GPT-5.3-Codex-Spark 5h",
+                    window: RateWindow(
+                        usedPercent: 100,
+                        windowMinutes: 300,
+                        resetsAt: now.addingTimeInterval(1200),
+                        resetDescription: nil)),
+                NamedRateWindow(
+                    id: "gpt-5-3-codex-spark-weekly",
+                    title: "GPT-5.3-Codex-Spark weekly",
+                    window: RateWindow(
+                        usedPercent: 30,
+                        windowMinutes: 10080,
+                        resetsAt: now.addingTimeInterval(7200),
+                        resetDescription: nil)),
+            ],
             updatedAt: now,
             identity: identity)
         let metadata = try #require(ProviderDefaults.metadata[.codex])
@@ -77,6 +95,13 @@ struct MenuCardModelCodexProjectionTests {
         #expect(model.metrics.first?.title == "Session")
         #expect(model.metrics.first?.percent == 22)
         #expect(model.metrics.first?.percentLabel.contains("used") == true)
+        #expect(model.metrics.map(\.title) == [
+            "Session",
+            "Weekly",
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+            "Code review",
+        ])
         #expect(model.metrics.contains { $0.title == "Code review" && $0.percent == 27 })
     }
 

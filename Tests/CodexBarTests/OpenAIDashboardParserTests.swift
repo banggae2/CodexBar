@@ -85,6 +85,59 @@ struct OpenAIDashboardParserTests {
     }
 
     @Test
+    func `parses named spark rate limits under core limits`() {
+        let body = """
+        Balance
+        5-hour usage limit
+        74% remaining
+        Resets today at 9:11 PM
+        Weekly usage limit
+        43% remaining
+        Resets May 12 at 9:48 PM
+        GPT-5.3-Codex-Spark 5-hour usage limit
+        0% remaining
+        Resets today at 9:23 PM
+        GPT-5.3-Codex-Spark weekly usage limit
+        70% remaining
+        Resets May 18 at 4:23 PM
+        """
+
+        let limits = OpenAIDashboardParser.parseRateLimits(bodyText: body)
+        let extra = OpenAIDashboardParser.parseExtraRateLimits(bodyText: body)
+
+        #expect(abs((limits.primary?.usedPercent ?? 0) - 26) < 0.001)
+        #expect(abs((limits.secondary?.usedPercent ?? 0) - 57) < 0.001)
+        #expect(extra.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(extra.map(\.window.usedPercent) == [100, 30])
+        #expect(extra.map(\.window.windowMinutes) == [300, 10080])
+    }
+
+    @Test
+    func `parses Korean named spark rate limits`() {
+        let body = """
+        GPT-5.3-Codex-Spark 5시간 사용 한도
+        0%
+        남음
+        오후 9:23 초기화
+        GPT-5.3-Codex-Spark 주간 사용 한도
+        70%
+        남음
+        2026. 5. 18. 오후 4:23 초기화
+        """
+
+        let extra = OpenAIDashboardParser.parseExtraRateLimits(bodyText: body)
+
+        #expect(extra.map(\.title) == [
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(extra.map(\.window.usedPercent) == [100, 30])
+    }
+
+    @Test
     func `parses spaced five hour limit label`() {
         let body = """
         Limite 5 h

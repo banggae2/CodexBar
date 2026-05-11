@@ -109,6 +109,30 @@ public enum OpenAIDashboardParser {
         return (primary, secondary)
     }
 
+    public static func parseExtraRateLimits(bodyText: String, now: Date = .init()) -> [NamedRateWindow] {
+        let cleaned = bodyText.replacingOccurrences(of: "\r", with: "\n")
+        let lines = cleaned
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var seenIDs = Set<String>()
+        var windows: [NamedRateWindow] = []
+        for idx in lines.indices {
+            guard let label = self.parseNamedLimitLabel(lines[idx]) else { continue }
+            let window = self.parseRateWindowAt(index: idx, lines: lines, windowMinutes: label.windowMinutes, now: now)
+            guard let window else { continue }
+
+            let id = "\(self.slug(label.limitName))-\(label.suffix)"
+            guard seenIDs.insert(id).inserted else { continue }
+            windows.append(NamedRateWindow(
+                id: id,
+                title: "\(label.limitName) \(label.titleSuffix)",
+                window: window))
+        }
+        return windows
+    }
+
     public static func parseCodeReviewLimit(bodyText: String, now: Date = .init()) -> RateWindow? {
         let cleaned = bodyText.replacingOccurrences(of: "\r", with: "\n")
         let lines = cleaned
@@ -289,40 +313,110 @@ public enum OpenAIDashboardParser {
         now: Date) -> RateWindow?
     {
         for idx in lines.indices where match(lines[idx]) {
-            let end = min(lines.count - 1, idx + 5)
-            let windowLines = Array(lines[idx...end])
-
-            var percentValue: Double?
-            var isRemaining = true
-            for line in windowLines {
-                if let percent = self.parsePercent(from: line) {
-                    percentValue = percent.value
-                    isRemaining = percent.isRemaining
-                    break
-                }
+            if let window = self.parseRateWindowAt(index: idx, lines: lines, windowMinutes: windowMinutes, now: now) {
+                return window
             }
-
-            guard let percentValue else { continue }
-            let usedPercent = isRemaining ? max(0, min(100, 100 - percentValue)) : max(0, min(100, percentValue))
-
-            let resetLine = windowLines.first { $0.localizedCaseInsensitiveContains("reset") }
-            let resetDescription = resetLine?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resetsAt = resetLine.flatMap { self.parseResetDate(from: $0, now: now) }
-            let fallbackDescription = resetsAt.map { UsageFormatter.resetDescription(from: $0) }
-
-            return RateWindow(
-                usedPercent: usedPercent,
-                windowMinutes: windowMinutes,
-                resetsAt: resetsAt,
-                resetDescription: resetDescription ?? fallbackDescription)
         }
         return nil
+    }
+
+    private static func parseRateWindowAt(
+        index idx: Int,
+        lines: [String],
+        windowMinutes: Int?,
+        now: Date) -> RateWindow?
+    {
+        let end = min(lines.count - 1, idx + 5)
+        let windowLines = Array(lines[idx...end])
+
+        var percentValue: Double?
+        var isRemaining = true
+        for line in windowLines {
+            if let percent = self.parsePercent(from: line) {
+                percentValue = percent.value
+                isRemaining = percent.isRemaining
+                break
+            }
+        }
+
+        guard let percentValue else { return nil }
+        let usedPercent = isRemaining
+            ? max(0, min(100, 100 - percentValue))
+            : max(0, min(100, percentValue))
+
+        let resetLine = windowLines.first { self.isResetLine($0) }
+        let resetDescription = resetLine?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resetsAt = resetLine.flatMap { self.parseResetDate(from: $0, now: now) }
+        let fallbackDescription = resetsAt.map { UsageFormatter.resetDescription(from: $0) }
+
+        return RateWindow(
+            usedPercent: usedPercent,
+            windowMinutes: windowMinutes,
+            resetsAt: resetsAt,
+            resetDescription: resetDescription ?? fallbackDescription)
+    }
+
+    private static func parseNamedLimitLabel(_ line: String)
+        -> (limitName: String, suffix: String, titleSuffix: String, windowMinutes: Int)?
+    {
+        let limitSuffixPattern = #"(?:\s+(?:(?:usage|사용)\s+)?(?:limit|한도))?\s*$"#
+        let fiveHourPattern = #"(?i)^\s*(.+?)\s+(?:5\s*h|5h|5-hour|5 hour|5시간)"# +
+            limitSuffixPattern
+        let weeklyPattern = #"(?i)^\s*(.+?)\s+(?:weekly|주간)"# + limitSuffixPattern
+        typealias LimitPattern = (pattern: String, suffix: String, titleSuffix: String, windowMinutes: Int)
+        let patterns: [LimitPattern] = [
+            (
+                fiveHourPattern,
+                "5h",
+                "5h",
+                5 * 60),
+            (
+                weeklyPattern,
+                "weekly",
+                "weekly",
+                7 * 24 * 60),
+        ]
+
+        for item in patterns {
+            guard let regex = try? NSRegularExpression(pattern: item.pattern),
+                  let match = regex.firstMatch(
+                      in: line,
+                      options: [],
+                      range: NSRange(line.startIndex..<line.endIndex, in: line)),
+                  match.numberOfRanges >= 2,
+                  let range = Range(match.range(at: 1), in: line)
+            else { continue }
+            let limitName = String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !limitName.isEmpty,
+                  !self.isGenericLimitPrefix(limitName)
+            else { continue }
+            return (limitName, item.suffix, item.titleSuffix, item.windowMinutes)
+        }
+        return nil
+    }
+
+    private static func isGenericLimitPrefix(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return lower == "usage" || lower == "usage limits" || lower == "limit" || lower == "limits"
+    }
+
+    private static func isResetLine(_ line: String) -> Bool {
+        let lower = line.lowercased()
+        return lower.contains("reset") || lower.contains("초기화") || lower.contains("재설정")
+    }
+
+    private static func slug(_ value: String) -> String {
+        let slug = value
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return slug.isEmpty ? "named-limit" : slug
     }
 
     private static func parsePercent(from line: String) -> (value: Double, isRemaining: Bool)? {
         guard let percent = TextParsing.firstNumber(pattern: #"([0-9]{1,3})\s*%"#, text: line) else { return nil }
         let lower = line.lowercased()
-        let isRemaining = lower.contains("remaining") || lower.contains("left")
+        let isRemaining = lower.contains("remaining") || lower.contains("left") || lower.contains("남음")
         let isUsed = lower.contains("used") || lower.contains("spent") || lower.contains("consumed")
         if isUsed { return (percent, false) }
         if isRemaining { return (percent, true) }
