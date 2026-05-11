@@ -43,11 +43,11 @@ enum SessionQuotaNotificationLogic {
         alreadySent: Set<Int>) -> [Int]
     {
         guard let currentUsed else { return [] }
+        guard let previousUsed else { return [] }
         let normalized = self.normalizedUsageThresholds(thresholds)
         let crossed = normalized.filter { threshold in
             guard !alreadySent.contains(threshold) else { return false }
             guard currentUsed >= Double(threshold) else { return false }
-            guard let previousUsed else { return true }
             let thresholdValue = Double(threshold)
             return previousUsed < thresholdValue || (previousUsed == thresholdValue && currentUsed > previousUsed)
         }
