@@ -7,6 +7,7 @@ public struct CodexUsageResponse: Decodable, Sendable {
     public let planType: PlanType?
     public let rateLimit: RateLimitDetails?
     public let rateLimitsByLimitId: [String: NamedRateLimitDetails]?
+    public let additionalRateLimits: [NamedRateLimitDetails]?
     public let credits: CreditDetails?
 
     enum CodingKeys: String, CodingKey {
@@ -17,6 +18,8 @@ public struct CodexUsageResponse: Decodable, Sendable {
         case rateLimits
         case rateLimitsByLimitId = "rate_limits_by_limit_id"
         case rateLimitsByLimitIdCamel = "rateLimitsByLimitId"
+        case additionalRateLimits = "additional_rate_limits"
+        case additionalRateLimitsCamel = "additionalRateLimits"
         case credits
     }
 
@@ -31,6 +34,9 @@ public struct CodexUsageResponse: Decodable, Sendable {
             [String: NamedRateLimitDetails].self,
             from: container,
             keys: [.rateLimitsByLimitId, .rateLimitsByLimitIdCamel])
+        self.additionalRateLimits = Self.decodeFirstRateLimitCollection(
+            from: container,
+            keys: [.additionalRateLimits, .additionalRateLimitsCamel])
         self.credits = Self.decodeFirst(CreditDetails.self, from: container, keys: [.credits])
     }
 
@@ -42,6 +48,21 @@ public struct CodexUsageResponse: Decodable, Sendable {
         for key in keys {
             if let value = try? container.decodeIfPresent(type, forKey: key) {
                 return value
+            }
+        }
+        return nil
+    }
+
+    private static func decodeFirstRateLimitCollection(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        keys: [CodingKeys]) -> [NamedRateLimitDetails]?
+    {
+        for key in keys {
+            if let value = try? container.decodeIfPresent([NamedRateLimitDetails].self, forKey: key) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent([String: NamedRateLimitDetails].self, forKey: key) {
+                return value.keys.sorted().compactMap { value[$0] }
             }
         }
         return nil
@@ -174,8 +195,12 @@ public struct CodexUsageResponse: Decodable, Sendable {
         enum CodingKeys: String, CodingKey {
             case limitId = "limit_id"
             case limitIdCamel = "limitId"
+            case meteredFeature = "metered_feature"
+            case meteredFeatureCamel = "meteredFeature"
             case limitName = "limit_name"
             case limitNameCamel = "limitName"
+            case rateLimit = "rate_limit"
+            case rateLimitCamel = "rateLimit"
             case primaryWindow = "primary_window"
             case primaryWindowCamel = "primaryWindow"
             case primary
@@ -188,16 +213,25 @@ public struct CodexUsageResponse: Decodable, Sendable {
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.limitId = Self.decodeFirst(String.self, from: container, keys: [.limitId, .limitIdCamel])
+            self.limitId = Self.decodeFirst(
+                String.self,
+                from: container,
+                keys: [.limitId, .limitIdCamel, .meteredFeature, .meteredFeatureCamel])
             self.limitName = Self.decodeFirst(String.self, from: container, keys: [.limitName, .limitNameCamel])
-            self.primaryWindow = Self.decodeFirst(
+            let nestedRateLimit = Self.decodeFirst(
+                RateLimitDetails.self,
+                from: container,
+                keys: [.rateLimit, .rateLimitCamel])
+            let primaryWindow = Self.decodeFirst(
                 WindowSnapshot.self,
                 from: container,
                 keys: [.primaryWindow, .primaryWindowCamel, .primary])
-            self.secondaryWindow = Self.decodeFirst(
+            let secondaryWindow = Self.decodeFirst(
                 WindowSnapshot.self,
                 from: container,
                 keys: [.secondaryWindow, .secondaryWindowCamel, .secondary])
+            self.primaryWindow = primaryWindow ?? nestedRateLimit?.primaryWindow
+            self.secondaryWindow = secondaryWindow ?? nestedRateLimit?.secondaryWindow
             self.limitSnapshot = Self.decodeFirst(
                 WindowSnapshot.self,
                 from: container,

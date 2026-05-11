@@ -1006,7 +1006,7 @@ extension UsageMenuCardView.Model {
                 pacePercent: nil,
                 paceOnTop: true))
         }
-        if let extraRateWindows = snapshot.extraRateWindows {
+        if input.provider != .codex, let extraRateWindows = snapshot.extraRateWindows {
             metrics.append(contentsOf: extraRateWindows.map { namedWindow in
                 Metric(
                     id: namedWindow.id,
@@ -1216,7 +1216,7 @@ extension UsageMenuCardView.Model {
         projection: CodexConsumerProjection,
         percentStyle: PercentStyle) -> [Metric]
     {
-        projection.visibleRateLanes.compactMap { lane in
+        var metrics: [Metric] = projection.visibleRateLanes.compactMap { lane in
             guard let window = projection.rateWindow(for: lane) else { return nil }
 
             let title: String
@@ -1249,6 +1249,26 @@ extension UsageMenuCardView.Model {
                 pacePercent: paceDetail?.pacePercent,
                 paceOnTop: paceDetail?.paceOnTop ?? true)
         }
+        metrics.append(contentsOf: projection.extraRateWindows.map { namedWindow in
+            Metric(
+                id: namedWindow.id,
+                title: namedWindow.title,
+                percent: Self.clamped(
+                    input.usageBarsShowUsed
+                        ? namedWindow.window.usedPercent
+                        : namedWindow.window.remainingPercent),
+                percentStyle: percentStyle,
+                resetText: Self.resetText(
+                    for: namedWindow.window,
+                    style: input.resetTimeDisplayStyle,
+                    now: input.now),
+                detailText: nil,
+                detailLeftText: nil,
+                detailRightText: nil,
+                pacePercent: nil,
+                paceOnTop: true)
+        })
+        return metrics
     }
 
     private static func antigravityMetrics(input: Input, snapshot: UsageSnapshot) -> [Metric] {

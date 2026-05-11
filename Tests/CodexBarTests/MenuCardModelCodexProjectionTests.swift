@@ -172,6 +172,98 @@ struct MenuCardModelCodexProjectionTests {
     }
 
     @Test
+    func `shows dashboard extra limits under weekly when usage snapshot has no extras`() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: "Pro Lite")
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 72,
+                windowMinutes: 300,
+                resetsAt: now.addingTimeInterval(3000),
+                resetDescription: nil),
+            secondary: RateWindow(
+                usedPercent: 68,
+                windowMinutes: 10080,
+                resetsAt: now.addingTimeInterval(6000),
+                resetDescription: nil),
+            tertiary: nil,
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+        let dashboard = OpenAIDashboardSnapshot(
+            signedInEmail: "codex@example.com",
+            codeReviewRemainingPercent: nil,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            extraRateWindows: [
+                NamedRateWindow(
+                    id: "codex-bengalfox-5h",
+                    title: "GPT-5.3-Codex-Spark 5h",
+                    window: RateWindow(
+                        usedPercent: 100,
+                        windowMinutes: 300,
+                        resetsAt: now.addingTimeInterval(900),
+                        resetDescription: nil)),
+                NamedRateWindow(
+                    id: "codex-bengalfox-weekly",
+                    title: "GPT-5.3-Codex-Spark weekly",
+                    window: RateWindow(
+                        usedPercent: 30,
+                        windowMinutes: 10080,
+                        resetsAt: now.addingTimeInterval(9000),
+                        resetDescription: nil)),
+            ],
+            updatedAt: now)
+        let codexProjection = CodexConsumerProjection.make(
+            surface: .liveCard,
+            context: CodexConsumerProjection.Context(
+                snapshot: snapshot,
+                rawUsageError: nil,
+                liveCredits: nil,
+                rawCreditsError: nil,
+                liveDashboard: dashboard,
+                rawDashboardError: nil,
+                dashboardAttachmentAuthorized: true,
+                dashboardRequiresLogin: false,
+                now: now))
+
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            codexProjection: codexProjection,
+            credits: nil,
+            creditsError: nil,
+            dashboard: nil,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: "Pro Lite"),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: false,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        #expect(model.metrics.map(\.title) == [
+            "Session",
+            "Weekly",
+            "GPT-5.3-Codex-Spark 5h",
+            "GPT-5.3-Codex-Spark weekly",
+        ])
+        #expect(model.metrics.map(\.percent) == [28, 32, 0, 70])
+    }
+
+    @Test
     func `uses semantic codex lanes when weekly duration drifts`() throws {
         let now = Date()
         let identity = ProviderIdentitySnapshot(

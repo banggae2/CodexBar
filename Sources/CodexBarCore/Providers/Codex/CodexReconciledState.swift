@@ -113,28 +113,53 @@ public struct CodexReconciledState: Sendable {
     }
 
     static func extraRateWindows(from response: CodexUsageResponse) -> [NamedRateWindow] {
-        guard let buckets = response.rateLimitsByLimitId, !buckets.isEmpty else { return [] }
+        var buckets: [(key: String, value: CodexUsageResponse.NamedRateLimitDetails)] = []
+        if let keyedBuckets = response.rateLimitsByLimitId {
+            buckets.append(contentsOf: keyedBuckets.keys.sorted().compactMap { key in
+                keyedBuckets[key].map { (key, $0) }
+            })
+        }
+        if let additionalBuckets = response.additionalRateLimits {
+            buckets.append(contentsOf: additionalBuckets.enumerated().map { idx, bucket in
+                let key = bucket.limitId?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ?? bucket.limitName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ?? "additional-\(idx)"
+                return (key, bucket)
+            })
+        }
+        guard !buckets.isEmpty else { return [] }
 
-        return buckets.keys.sorted().flatMap { key -> [NamedRateWindow] in
+        var seenIDs = Set<String>()
+        return buckets.flatMap { key, bucket -> [NamedRateWindow] in
             guard key != "codex",
-                  let bucket = buckets[key],
                   let limitName = UsageFetcher.normalizedCodexAccountField(bucket.limitName)
             else {
                 return []
             }
+            let idPrefix = Self.extraRateWindowIDPrefix(key: key, limitName: limitName)
+            guard seenIDs.insert(idPrefix).inserted else { return [] }
 
             let normalized = CodexRateWindowNormalizer.normalize(
                 primary: self.makeWindow(bucket.primaryWindow ?? bucket.limitSnapshot),
                 secondary: self.makeWindow(bucket.secondaryWindow))
             return [
-                normalized.primary.map {
-                    NamedRateWindow(id: "\(key)-5h", title: "\(limitName) 5h", window: $0)
+                normalized.primary.map { window in
+                    NamedRateWindow(id: "\(idPrefix)-5h", title: "\(limitName) 5h", window: window)
                 },
-                normalized.secondary.map {
-                    NamedRateWindow(id: "\(key)-weekly", title: "\(limitName) weekly", window: $0)
+                normalized.secondary.map { window in
+                    NamedRateWindow(id: "\(idPrefix)-weekly", title: "\(limitName) weekly", window: window)
                 },
             ].compactMap(\.self)
         }
+    }
+
+    private static func extraRateWindowIDPrefix(key: String, limitName: String) -> String {
+        let raw = key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? limitName : key
+        let slug = raw
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return slug.isEmpty ? "codex-extra-limit" : slug
     }
 
     private static func makeWindow(_ window: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {

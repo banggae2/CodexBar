@@ -170,6 +170,7 @@ struct CodexConsumerProjection {
 
     let visibleRateLanes: [RateLane]
     let supplementalMetrics: [SupplementalMetric]
+    let extraRateWindows: [NamedRateWindow]
     let planUtilizationLanes: [PlanUtilizationLane]
     let dashboardVisibility: DashboardVisibility
     let credits: CreditsProjection?
@@ -191,6 +192,7 @@ struct CodexConsumerProjection {
         let rateWindowsByLane = self.rateWindowsByLane(snapshot: context.snapshot)
         let visibleRateLanes = self.visibleRateLanes(from: rateWindowsByLane, snapshot: context.snapshot)
         let planUtilizationLanes = self.planUtilizationLanes(from: rateWindowsByLane)
+        let extraRateWindows = self.extraRateWindows(snapshot: context.snapshot, dashboard: dashboard)
 
         let creditsProjection: CreditsProjection? = if allowsLiveAdjuncts,
                                                        context.liveCredits != nil || context.rawCreditsError != nil
@@ -229,6 +231,7 @@ struct CodexConsumerProjection {
         return CodexConsumerProjection(
             visibleRateLanes: visibleRateLanes,
             supplementalMetrics: supplementalMetrics,
+            extraRateWindows: extraRateWindows,
             planUtilizationLanes: planUtilizationLanes,
             dashboardVisibility: dashboardVisibility,
             credits: creditsProjection,
@@ -306,6 +309,17 @@ struct CodexConsumerProjection {
         return semanticOrder.compactMap { lane in
             guard let window = rateWindowsByLane[lane] else { return nil }
             return PlanUtilizationLane(role: self.planUtilizationRole(for: lane), window: window)
+        }
+    }
+
+    private static func extraRateWindows(
+        snapshot: UsageSnapshot?,
+        dashboard: OpenAIDashboardSnapshot?) -> [NamedRateWindow]
+    {
+        let windows = (snapshot?.extraRateWindows ?? []) + (dashboard?.extraRateWindows ?? [])
+        var seenIDs = Set<String>()
+        return windows.filter { window in
+            seenIDs.insert(window.id).inserted
         }
     }
 
