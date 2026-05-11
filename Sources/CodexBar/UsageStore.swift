@@ -212,10 +212,12 @@ final class UsageStore {
     @ObservationIgnored var codexHistoricalDatasetAccountKey: String?
     @ObservationIgnored var lastKnownResetSnapshots: [UsageProvider: UsageSnapshot] = [:]
     @ObservationIgnored var lastKnownSessionRemaining: [UsageProvider: Double] = [:]
+    @ObservationIgnored var lastKnownSessionResetAt: [UsageProvider: Date] = [:]
     @ObservationIgnored var lastKnownSessionWindowSource: [UsageProvider: SessionQuotaWindowSource] = [:]
     @ObservationIgnored var sentSessionUsageThresholds: [UsageProvider: Set<Int>] = [:]
     @ObservationIgnored var lastKnownWeeklyLimitUsed: [UsageProvider: Double] = [:]
     @ObservationIgnored var lastKnownWeeklyLimitRemaining: [UsageProvider: Double] = [:]
+    @ObservationIgnored var lastKnownWeeklyLimitResetAt: [UsageProvider: Date] = [:]
     @ObservationIgnored var sentWeeklyLimitUsageThresholds: [UsageProvider: Set<Int>] = [:]
     @ObservationIgnored var lastTokenFetchAt: [UsageProvider: Date] = [:]
     @ObservationIgnored var planUtilizationHistory: [UsageProvider: PlanUtilizationHistoryBuckets] = [:]
@@ -656,26 +658,42 @@ final class UsageStore {
         guard let weeklyWindow = self.weeklyLimitWindow(provider: provider, snapshot: snapshot) else {
             self.lastKnownWeeklyLimitUsed.removeValue(forKey: provider)
             self.lastKnownWeeklyLimitRemaining.removeValue(forKey: provider)
+            self.lastKnownWeeklyLimitResetAt.removeValue(forKey: provider)
             self.sentWeeklyLimitUsageThresholds.removeValue(forKey: provider)
             return
         }
 
         let currentUsed = weeklyWindow.usedPercent
         let currentRemaining = weeklyWindow.remainingPercent
+        let currentResetsAt = weeklyWindow.resetsAt
         let previousUsed = self.lastKnownWeeklyLimitUsed[provider]
         let previousRemaining = self.lastKnownWeeklyLimitRemaining[provider]
+        let previousResetsAt = self.lastKnownWeeklyLimitResetAt[provider]
+        let resetBoundaryAdvanced = SessionQuotaNotificationLogic.didAdvanceResetBoundary(
+            previousResetsAt: previousResetsAt,
+            currentResetsAt: currentResetsAt)
+        let usesNumericRecoveryFallback = SessionQuotaNotificationLogic.shouldUseNumericRecoveryFallback(
+            previousResetsAt: previousResetsAt,
+            currentResetsAt: currentResetsAt)
+        let numericRecoveryTransition = usesNumericRecoveryFallback
+            ? SessionQuotaNotificationLogic.transition(
+                previousRemaining: previousRemaining,
+                currentRemaining: currentRemaining)
+            : .none
         if let previousUsed, currentUsed < previousUsed {
+            self.sentWeeklyLimitUsageThresholds.removeValue(forKey: provider)
+        }
+        if resetBoundaryAdvanced || numericRecoveryTransition == .restored {
             self.sentWeeklyLimitUsageThresholds.removeValue(forKey: provider)
         }
         defer {
             self.lastKnownWeeklyLimitUsed[provider] = currentUsed
             self.lastKnownWeeklyLimitRemaining[provider] = currentRemaining
+            self.lastKnownWeeklyLimitResetAt[provider] = currentResetsAt
         }
 
         if self.settings.weeklyLimitRecoveryNotificationsEnabled,
-           SessionQuotaNotificationLogic.transition(
-               previousRemaining: previousRemaining,
-               currentRemaining: currentRemaining) == .restored
+           resetBoundaryAdvanced || numericRecoveryTransition == .restored
         {
             self.sessionQuotaNotifier.post(
                 transition: .weeklyRestored,
@@ -717,15 +735,18 @@ final class UsageStore {
         // expose only chat quota, so allow Copilot to fall back to secondary for transition tracking.
         guard let sessionWindow = self.sessionQuotaWindow(provider: provider, snapshot: snapshot) else {
             self.lastKnownSessionRemaining.removeValue(forKey: provider)
+            self.lastKnownSessionResetAt.removeValue(forKey: provider)
             self.lastKnownSessionWindowSource.removeValue(forKey: provider)
             self.sentSessionUsageThresholds.removeValue(forKey: provider)
             return
         }
         let currentRemaining = sessionWindow.window.remainingPercent
         let currentUsed = sessionWindow.window.usedPercent
+        let currentResetsAt = sessionWindow.window.resetsAt
         let currentSource = sessionWindow.source
         let previousRemaining = self.lastKnownSessionRemaining[provider]
         let previousUsed = previousRemaining.map { max(0, min(100, 100 - $0)) }
+        let previousResetsAt = self.lastKnownSessionResetAt[provider]
         let previousSource = self.lastKnownSessionWindowSource[provider]
 
         if let previousSource, previousSource != currentSource {
@@ -734,13 +755,25 @@ final class UsageStore {
                 "session window source changed: provider=\(providerText) prevSource=\(previousSource.rawValue) " +
                     "currSource=\(currentSource.rawValue) curr=\(currentRemaining)")
             self.lastKnownSessionRemaining[provider] = currentRemaining
+            self.lastKnownSessionResetAt[provider] = currentResetsAt
             self.lastKnownSessionWindowSource[provider] = currentSource
             self.sentSessionUsageThresholds.removeValue(forKey: provider)
             return
         }
 
+        let resetBoundaryAdvanced = SessionQuotaNotificationLogic.didAdvanceResetBoundary(
+            previousResetsAt: previousResetsAt,
+            currentResetsAt: currentResetsAt)
+        let usesNumericRecoveryFallback = SessionQuotaNotificationLogic.shouldUseNumericRecoveryFallback(
+            previousResetsAt: previousResetsAt,
+            currentResetsAt: currentResetsAt)
+        if resetBoundaryAdvanced {
+            self.sentSessionUsageThresholds.removeValue(forKey: provider)
+        }
+
         defer {
             self.lastKnownSessionRemaining[provider] = currentRemaining
+            self.lastKnownSessionResetAt[provider] = currentResetsAt
             self.lastKnownSessionWindowSource[provider] = currentSource
         }
 
@@ -770,6 +803,20 @@ final class UsageStore {
                 let providerText = provider.rawValue
                 let message = "startup depleted: provider=\(providerText) curr=\(currentRemaining)"
                 self.sessionQuotaLogger.info(message)
+            }
+            return
+        }
+
+        if resetBoundaryAdvanced {
+            let providerText = provider.rawValue
+            let message =
+                "reset boundary advanced: provider=\(providerText) " +
+                "prevReset=\(previousResetsAt?.description ?? "nil") " +
+                "currReset=\(currentResetsAt?.description ?? "nil")"
+            self.sessionQuotaLogger.info(message)
+
+            if self.settings.sessionQuotaNotificationsEnabled {
+                self.sessionQuotaNotifier.post(transition: .restored, provider: provider, badge: nil)
             }
             return
         }
@@ -804,7 +851,7 @@ final class UsageStore {
         case .depleted:
             false
         case .restored:
-            self.settings.sessionQuotaNotificationsEnabled
+            usesNumericRecoveryFallback && self.settings.sessionQuotaNotificationsEnabled
         case .none, .usageThreshold, .weeklyUsageThreshold, .weeklyRestored:
             false
         }
