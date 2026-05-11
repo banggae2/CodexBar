@@ -141,6 +141,7 @@ extension StatusItemController {
 
         self.openMenus.removeValue(forKey: key)
         self.menuRefreshTasks.removeValue(forKey: key)?.cancel()
+        self.menuSelectionTasks.removeValue(forKey: key)?.cancel()
 
         let isPersistentMenu = menu === self.mergedMenu ||
             menu === self.fallbackMenu ||
@@ -739,21 +740,31 @@ extension StatusItemController {
                     self.lastMergedSwitcherSelection = .overview
                     let provider = self.resolvedMenuProvider()
                     self.lastMenuProvider = provider ?? .codex
-                    self.populateMenu(menu, provider: provider)
+                    self.scheduleProviderSwitcherMenuRebuild(menu, provider: provider)
                 case let .provider(provider):
                     self.settings.mergedMenuLastSelectedWasOverview = false
                     self.lastMergedSwitcherSelection = .provider(provider)
                     self.selectedMenuProvider = provider
                     self.lastMenuProvider = provider
-                    self.populateMenu(menu, provider: provider)
+                    self.scheduleProviderSwitcherMenuRebuild(menu, provider: provider)
                 }
-                self.markMenuFresh(menu)
-                self.applyIcon(phase: nil)
             })
         let item = NSMenuItem()
         item.view = view
         item.isEnabled = false
         return item
+    }
+
+    private func scheduleProviderSwitcherMenuRebuild(_ menu: NSMenu, provider: UsageProvider?) {
+        let key = ObjectIdentifier(menu)
+        self.menuSelectionTasks[key]?.cancel()
+        self.menuSelectionTasks[key] = Task { @MainActor [weak self, weak menu] in
+            guard let self, let menu, !Task.isCancelled else { return }
+            self.menuSelectionTasks.removeValue(forKey: key)
+            self.populateMenu(menu, provider: provider)
+            self.markMenuFresh(menu)
+            self.applyIcon(phase: nil)
+        }
     }
 
     private func makeTokenAccountSwitcherItem(
@@ -969,7 +980,10 @@ extension StatusItemController {
     private func scheduleOpenMenuRefresh(for menu: NSMenu) {
         // Kick off a user-initiated refresh on open (non-forced) and re-check after a delay.
         // NEVER block menu opening with network requests.
-        if !self.store.isRefreshing {
+        if self.settings.menuOpenRefreshEnabled, !self.store.isRefreshing {
+            #if DEBUG
+            self.onImmediateMenuRefreshAttemptForTesting?()
+            #endif
             self.refreshStore(forceTokenUsage: false)
         }
         let key = ObjectIdentifier(menu)
@@ -979,6 +993,7 @@ extension StatusItemController {
             try? await Task.sleep(for: Self.menuOpenRefreshDelay)
             guard !Task.isCancelled else { return }
             guard Self.menuRefreshEnabled else { return }
+            guard self.settings.menuOpenRefreshEnabled else { return }
             #if DEBUG
             self.onDelayedMenuRefreshAttemptForTesting?()
             #endif

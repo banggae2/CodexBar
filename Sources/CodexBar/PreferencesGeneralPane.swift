@@ -105,6 +105,11 @@ struct GeneralPane: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    PreferenceToggleRow(
+                        title: L10n.string("Refresh when menu opens"),
+                        subtitle: L10n.string(
+                            "Can run network requests, CLI probes, and storage scans when the menu opens."),
+                        binding: self.$settings.menuOpenRefreshEnabled)
                 }
 
                 Divider()

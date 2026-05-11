@@ -177,6 +177,31 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
+    func `startup sample above usage threshold only seeds baseline`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-startup-threshold")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = true
+        settings.sessionQuotaUsageThresholds = [80, 90]
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 91, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+
+        #expect(notifier.posts.isEmpty)
+    }
+
+    @Test
     func `depleted transition does not post separately when threshold alerts are disabled`() throws {
         let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-depleted-disabled")
         settings.refreshFrequency = .manual

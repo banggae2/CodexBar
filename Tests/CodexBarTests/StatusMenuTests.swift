@@ -407,6 +407,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuOpenRefreshEnabled = true
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
         var delayedRefreshWakeCount = 0
@@ -429,7 +430,6 @@ struct StatusMenuTests {
         #expect(delayedRefreshWakeCount == 0)
     }
 
-    @Test
     func `login state callbacks do not attach menus after release`() {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
@@ -560,7 +560,7 @@ struct StatusMenuTests {
     }
 
     @Test
-    func `merged provider switch rebuilds stale width switcher rows`() {
+    func `merged provider switch defers stale width switcher rebuild until next turn`() async {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -601,10 +601,16 @@ struct StatusMenuTests {
         #expect(initialSwitcher != nil)
         let initialSwitcherID = initialSwitcher.map(ObjectIdentifier.init)
         initialSwitcher?.frame.size.width = 250
+        let initialTitles = menu.items.map(\.title)
 
         let nextProviderButton = self.switcherButtons(in: menu).first(where: { $0.state == .off })
         #expect(nextProviderButton != nil)
         nextProviderButton?.performClick(nil)
+
+        #expect(settings.selectedMenuProvider == .claude)
+        #expect(menu.items.map(\.title) == initialTitles)
+
+        await Task.yield()
 
         let updatedSwitcher = menu.items.first?.view as? ProviderSwitcherView
         #expect(updatedSwitcher != nil)

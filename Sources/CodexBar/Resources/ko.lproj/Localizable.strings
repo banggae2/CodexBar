@@ -657,3 +657,5 @@
 "Account Added" = "계정 추가됨";
 "Login Failed" = "로그인 실패";
 "System Account" = "시스템 계정";
+"Refresh when menu opens" = "메뉴를 열 때 새로 고침";
+"Can run network requests, CLI probes, and storage scans when the menu opens." = "메뉴를 열 때 네트워크 요청, CLI 프로브, 저장 공간 스캔이 실행될 수 있습니다.";

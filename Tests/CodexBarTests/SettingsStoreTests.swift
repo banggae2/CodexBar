@@ -59,6 +59,7 @@ struct SettingsStoreTests {
 
         #expect(store.refreshFrequency == .fiveMinutes)
         #expect(defaults.string(forKey: "refreshFrequency") == RefreshFrequency.fiveMinutes.rawValue)
+        #expect(store.menuOpenRefreshEnabled == true)
     }
 
     @Test
@@ -135,6 +136,41 @@ struct SettingsStoreTests {
             syntheticTokenStore: NoopSyntheticTokenStore())
 
         #expect(storeB.providerStorageFootprintsEnabled == true)
+    }
+
+    @Test
+    func `menu open refresh defaults off for new installs`() throws {
+        let suite = "SettingsStoreTests-menu-open-refresh-new"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.menuOpenRefreshEnabled == false)
+        #expect(defaults.bool(forKey: "menuOpenRefreshEnabled") == false)
+    }
+
+    @Test
+    func `menu open refresh stays enabled for existing installs`() throws {
+        let suite = "SettingsStoreTests-menu-open-refresh-existing"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(RefreshFrequency.fiveMinutes.rawValue, forKey: "refreshFrequency")
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.menuOpenRefreshEnabled == true)
+        #expect(defaults.bool(forKey: "menuOpenRefreshEnabled") == true)
     }
 
     @Test

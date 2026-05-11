@@ -85,8 +85,10 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     var fallbackMenu: NSMenu?
     var openMenus: [ObjectIdentifier: NSMenu] = [:]
     var menuRefreshTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    var menuSelectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     #if DEBUG
     var onDelayedMenuRefreshAttemptForTesting: (() -> Void)?
+    var onImmediateMenuRefreshAttemptForTesting: (() -> Void)?
     var isReleasedForTesting = false
     var _test_openMenuRefreshYieldOverride: (@MainActor () async -> Void)?
     var _test_openMenuRebuildObserver: (@MainActor (NSMenu) -> Void)?
