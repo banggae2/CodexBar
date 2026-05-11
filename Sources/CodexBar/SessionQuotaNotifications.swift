@@ -53,6 +53,16 @@ enum SessionQuotaNotificationLogic {
         }
         return crossed.last.map { [$0] } ?? []
     }
+
+    static func didAdvanceResetBoundary(previousResetsAt: Date?, currentResetsAt: Date?, now: Date = Date()) -> Bool {
+        guard let previousResetsAt, let currentResetsAt else { return false }
+        guard now >= previousResetsAt else { return false }
+        return currentResetsAt > previousResetsAt
+    }
+
+    static func shouldUseNumericRecoveryFallback(previousResetsAt: Date?, currentResetsAt: Date?) -> Bool {
+        previousResetsAt == nil || currentResetsAt == nil
+    }
 }
 
 @MainActor

@@ -246,41 +246,59 @@ struct UsageStoreSessionQuotaTransitionTests {
             browserDetection: BrowserDetection(cacheTTL: 0),
             settings: settings,
             sessionQuotaNotifier: notifier)
+        let previousReset = Date(timeIntervalSinceNow: -60)
+        let nextReset = Date(timeIntervalSinceNow: 5 * 60 * 60)
 
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 70, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(
+                    usedPercent: 70,
+                    windowMinutes: nil,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 85, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(
+                    usedPercent: 85,
+                    windowMinutes: nil,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 90, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(
+                    usedPercent: 90,
+                    windowMinutes: nil,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 100, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(
+                    usedPercent: 100,
+                    windowMinutes: nil,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 20, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(usedPercent: 20, windowMinutes: nil, resetsAt: nextReset, resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
         store.handleSessionQuotaTransition(
             provider: .claude,
             snapshot: UsageSnapshot(
-                primary: RateWindow(usedPercent: 85, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                primary: RateWindow(usedPercent: 85, windowMinutes: nil, resetsAt: nextReset, resetDescription: nil),
                 secondary: nil,
                 updatedAt: Date()))
 
@@ -289,6 +307,75 @@ struct UsageStoreSessionQuotaTransitionTests {
             .restored,
             .usageThreshold(80),
         ])
+    }
+
+    @Test
+    func `session recovery notification fires when reset boundary advances before full depletion`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-session-reset-recovery")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = false
+        settings.sessionQuotaNotificationsEnabled = true
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+        let previousReset = Date(timeIntervalSinceNow: -60)
+        let nextReset = Date(timeIntervalSinceNow: 5 * 60 * 60)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(
+                    usedPercent: 80,
+                    windowMinutes: 300,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 80, windowMinutes: 300, resetsAt: nextReset, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+
+        #expect(notifier.posts.map(\.transition) == [.restored])
+    }
+
+    @Test
+    func `session recovery notification falls back to numeric recovery without reset metadata`() throws {
+        let settings = try self
+            .makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-session-fallback-recovery")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = false
+        settings.sessionQuotaNotificationsEnabled = true
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 100, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 20, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()))
+
+        #expect(notifier.posts.map(\.transition) == [.restored])
     }
 
     @Test
@@ -324,7 +411,7 @@ struct UsageStoreSessionQuotaTransitionTests {
     }
 
     @Test
-    func `weekly recovery notification fires when depleted weekly limit becomes available`() throws {
+    func `weekly recovery notification falls back to numeric recovery without reset metadata`() throws {
         let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-recovery")
         settings.refreshFrequency = .manual
         settings.statusChecksEnabled = false
@@ -351,6 +438,83 @@ struct UsageStoreSessionQuotaTransitionTests {
             snapshot: UsageSnapshot(
                 primary: RateWindow(usedPercent: 80, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
                 secondary: RateWindow(usedPercent: 20, windowMinutes: 10080, resetsAt: nil, resetDescription: nil),
+                updatedAt: Date()))
+
+        #expect(notifier.posts.map(\.transition) == [.weeklyRestored])
+    }
+
+    @Test
+    func `weekly recovery notification ignores numeric recovery when reset metadata exists`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-reset-preferred")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = false
+        settings.sessionQuotaNotificationsEnabled = false
+        settings.weeklyLimitThresholdNotificationsEnabled = false
+        settings.weeklyLimitRecoveryNotificationsEnabled = true
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+        let reset = Date(timeIntervalSinceNow: 60 * 60)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 100, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: RateWindow(usedPercent: 100, windowMinutes: 10080, resetsAt: reset, resetDescription: nil),
+                updatedAt: Date()))
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 80, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: RateWindow(usedPercent: 20, windowMinutes: 10080, resetsAt: reset, resetDescription: nil),
+                updatedAt: Date()))
+
+        #expect(notifier.posts.isEmpty)
+    }
+
+    @Test
+    func `weekly recovery notification fires when reset boundary advances before full depletion`() throws {
+        let settings = try self.makeSettings(suiteName: "UsageStoreSessionQuotaTransitionTests-weekly-reset-recovery")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.sessionQuotaThresholdNotificationsEnabled = false
+        settings.sessionQuotaNotificationsEnabled = false
+        settings.weeklyLimitThresholdNotificationsEnabled = false
+        settings.weeklyLimitRecoveryNotificationsEnabled = true
+
+        let notifier = SessionQuotaNotifierSpy()
+        let store = UsageStore(
+            fetcher: UsageFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            sessionQuotaNotifier: notifier)
+        let previousReset = Date(timeIntervalSinceNow: -60)
+        let nextReset = Date(timeIntervalSinceNow: 7 * 24 * 60 * 60)
+
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 50, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: RateWindow(
+                    usedPercent: 80,
+                    windowMinutes: 10080,
+                    resetsAt: previousReset,
+                    resetDescription: nil),
+                updatedAt: Date()))
+        store.handleSessionQuotaTransition(
+            provider: .claude,
+            snapshot: UsageSnapshot(
+                primary: RateWindow(usedPercent: 40, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+                secondary: RateWindow(
+                    usedPercent: 80,
+                    windowMinutes: 10080,
+                    resetsAt: nextReset,
+                    resetDescription: nil),
                 updatedAt: Date()))
 
         #expect(notifier.posts.map(\.transition) == [.weeklyRestored])
