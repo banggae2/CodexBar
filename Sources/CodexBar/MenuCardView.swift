@@ -903,7 +903,7 @@ extension UsageMenuCardView.Model {
         }
 
         if let updated = snapshot?.updatedAt {
-            return (UsageFormatter.updatedString(from: updated, now: now), .info)
+            return (AppUsageFormatter.updatedString(from: updated, now: now), .info)
         }
 
         return (L10n.string("Not fetched yet"), .info)

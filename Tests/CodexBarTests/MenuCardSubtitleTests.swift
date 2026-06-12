@@ -5,9 +5,33 @@ import Testing
 
 struct MenuCardSubtitleTests {
     @Test
+    func `subtitle respects selected app language for fresh updates`() throws {
+        let previousLanguage = UserDefaults.standard.string(forKey: AppLanguage.userDefaultsKey)
+        UserDefaults.standard.set(AppLanguage.korean.rawValue, forKey: AppLanguage.userDefaultsKey)
+        defer {
+            if let previousLanguage {
+                UserDefaults.standard.set(previousLanguage, forKey: AppLanguage.userDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AppLanguage.userDefaultsKey)
+            }
+        }
+
+        let updatedAt = Date(timeIntervalSinceReferenceDate: 0)
+        let model = try Self.makeModel(updatedAt: updatedAt, now: updatedAt)
+
+        #expect(model.subtitleText == "방금 업데이트됨")
+    }
+
+    @Test
     func `subtitle uses injected current time`() throws {
         let updatedAt = Date(timeIntervalSinceReferenceDate: 0)
         let now = updatedAt.addingTimeInterval(5 * 3600)
+        let model = try Self.makeModel(updatedAt: updatedAt, now: now)
+
+        #expect(model.subtitleText == AppUsageFormatter.updatedString(from: updatedAt, now: now))
+    }
+
+    private static func makeModel(updatedAt: Date, now: Date) throws -> UsageMenuCardView.Model {
         let snapshot = UsageSnapshot(
             primary: RateWindow(
                 usedPercent: 22,
@@ -24,7 +48,7 @@ struct MenuCardSubtitleTests {
                 loginMethod: "Plus Plan"))
         let metadata = try #require(ProviderDefaults.metadata[.codex])
 
-        let model = UsageMenuCardView.Model.make(.init(
+        return UsageMenuCardView.Model.make(.init(
             provider: .codex,
             metadata: metadata,
             snapshot: snapshot,
@@ -43,7 +67,5 @@ struct MenuCardSubtitleTests {
             showOptionalCreditsAndExtraUsage: true,
             hidePersonalInfo: false,
             now: now))
-
-        #expect(model.subtitleText == UsageFormatter.updatedString(from: updatedAt, now: now))
     }
 }
