@@ -27,18 +27,33 @@ struct LocalizationTests {
 
     @Test
     func `app language setting persists selected locale`() throws {
+        let previousStandardLanguage = UserDefaults.standard.object(forKey: AppLanguage.userDefaultsKey)
+        let previousAppleLanguages = UserDefaults.standard.object(forKey: "AppleLanguages")
+        defer {
+            if let previousStandardLanguage {
+                UserDefaults.standard.set(previousStandardLanguage, forKey: AppLanguage.userDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AppLanguage.userDefaultsKey)
+            }
+            if let previousAppleLanguages {
+                UserDefaults.standard.set(previousAppleLanguages, forKey: "AppleLanguages")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
         let suite = "LocalizationTests-app-language-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
 
         let store = Self.makeSettingsStore(userDefaults: defaults, suiteName: suite)
-        #expect(store.appLanguage == .system)
+        #expect(store.appLanguage == AppLanguage.system.rawValue)
 
-        store.appLanguage = .korean
+        store.appLanguage = AppLanguage.korean.rawValue
         #expect(defaults.string(forKey: AppLanguage.userDefaultsKey) == AppLanguage.korean.rawValue)
 
         let restored = Self.makeSettingsStore(userDefaults: defaults, suiteName: suite, resetConfig: false)
-        #expect(restored.appLanguage == .korean)
+        #expect(restored.appLanguage == AppLanguage.korean.rawValue)
     }
 
     @Test

@@ -12,13 +12,18 @@ public enum OpenRouterSettingsReader {
 
     /// Returns the API URL, defaulting to production endpoint
     public static func apiURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let url = ProviderEndpointSafety.trustedHTTPSURL(
-            self.cleaned(environment["OPENROUTER_API_URL"]),
-            allowedHostSuffixes: ["openrouter.ai"])
-        {
-            return url
+        if let override = self.validAPIURL(environment: environment) {
+            return override
         }
         return URL(string: "https://openrouter.ai/api/v1")!
+    }
+
+    public static func validateEndpointOverrides(
+        environment: [String: String] = ProcessInfo.processInfo.environment) throws
+    {
+        guard let raw = self.cleaned(environment["OPENROUTER_API_URL"]) else { return }
+        guard ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: raw) == nil else { return }
+        throw OpenRouterSettingsError.invalidEndpointOverride("OPENROUTER_API_URL")
     }
 
     static func cleaned(_ raw: String?) -> String? {
@@ -29,11 +34,15 @@ public enum OpenRouterSettingsReader {
         if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
             (value.hasPrefix("'") && value.hasSuffix("'"))
         {
-            value.removeFirst()
-            value.removeLast()
+            value = String(value.dropFirst().dropLast())
         }
 
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    private static func validAPIURL(environment: [String: String]) -> URL? {
+        guard let raw = self.cleaned(environment["OPENROUTER_API_URL"]) else { return nil }
+        return ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: raw)
     }
 }

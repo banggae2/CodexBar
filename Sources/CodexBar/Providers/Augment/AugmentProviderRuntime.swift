@@ -5,6 +5,12 @@ import Foundation
 final class AugmentProviderRuntime: ProviderRuntime {
     let id: UsageProvider = .augment
     private var keepalive: AugmentSessionKeepalive?
+    #if DEBUG
+    private(set) var _test_keepaliveStopCount = 0
+    var _test_isKeepaliveRunning: Bool {
+        self.keepalive != nil
+    }
+    #endif
 
     func start(context: ProviderRuntimeContext) {
         self.updateKeepalive(context: context)
@@ -75,12 +81,7 @@ final class AugmentProviderRuntime: ProviderRuntime {
             await store.refreshProvider(.augment)
         }
 
-        self.keepalive = AugmentSessionKeepalive(
-            logger: logger,
-            notificationsEnabled: { [weak store = context.store] in
-                store?.settings.augmentSessionExpiredNotificationsEnabled ?? true
-            },
-            onSessionRecovered: onSessionRecovered)
+        self.keepalive = AugmentSessionKeepalive(logger: logger, onSessionRecovered: onSessionRecovered)
         self.keepalive?.start()
         context.store.augmentLogger.info("Augment keepalive started")
         #endif
@@ -88,8 +89,12 @@ final class AugmentProviderRuntime: ProviderRuntime {
 
     private func stopKeepalive(context: ProviderRuntimeContext, reason: String) {
         #if os(macOS)
-        self.keepalive?.stop()
+        guard let keepalive = self.keepalive else { return }
+        keepalive.stop()
         self.keepalive = nil
+        #if DEBUG
+        self._test_keepaliveStopCount += 1
+        #endif
         context.store.augmentLogger.info("Augment keepalive stopped (\(reason))")
         #endif
     }
@@ -97,6 +102,7 @@ final class AugmentProviderRuntime: ProviderRuntime {
     private func forceRefresh(context: ProviderRuntimeContext) async {
         #if os(macOS)
         context.store.augmentLogger.info("Augment force refresh requested")
+        CookieHeaderCache.clear(provider: .augment)
         guard let keepalive = self.keepalive else {
             context.store.augmentLogger.warning("Augment keepalive not running; starting")
             self.startKeepalive(context: context)
@@ -110,8 +116,6 @@ final class AugmentProviderRuntime: ProviderRuntime {
         }
 
         await keepalive.forceRefresh()
-        context.store.augmentLogger.info("Refreshing Augment usage after session refresh")
-        await context.store.refreshProvider(.augment)
         #endif
     }
 }

@@ -76,7 +76,6 @@ extension UsageStore {
                 webExtrasEnabled: configuration.webExtrasEnabled,
                 hasWebSession: hasKey,
                 hasCLI: hasClaudeBinary,
-                hasLocalLogs: true,
                 hasOAuthCredentials: hasOAuthCredentials)
             let plan = ClaudeSourcePlanner.resolve(input: planningInput)
             let strategy = plan.compatibilityStrategy
@@ -106,6 +105,12 @@ extension UsageStore {
             switch strategy.dataSource {
             case .auto:
                 lines.append("Auto source selected.")
+                return lines.joined(separator: "\n")
+            case .api:
+                let hasAdminKey = ProviderTokenResolver.claudeAdminAPIToken(
+                    environment: configuration.environment) != nil
+                lines.append("Admin API source selected.")
+                lines.append("hasAdminAPIKey=\(hasAdminKey)")
                 return lines.joined(separator: "\n")
             case .web:
                 do {
@@ -160,25 +165,6 @@ extension UsageStore {
                 let cli = await fetcher.debugRawProbe(model: "sonnet")
                 lines.append(cli)
                 return lines.joined(separator: "\n")
-            case .claudeDashboardPlugin:
-                lines.append("Claude Dashboard Plugin source selected.")
-                return lines.joined(separator: "\n")
-            case .log:
-                do {
-                    let snapshot = try await CostUsageFetcher().loadTokenSnapshot(
-                        provider: .claude,
-                        forceRefresh: true)
-                    lines.append("Local log summary:")
-                    lines.append("daily_entries=\(snapshot.daily.count)")
-                    lines.append("session_tokens=\(snapshot.sessionTokens?.description ?? "nil")")
-                    lines.append("session_cost_usd=\(snapshot.sessionCostUSD?.description ?? "nil")")
-                    lines.append("last30_tokens=\(snapshot.last30DaysTokens?.description ?? "nil")")
-                    lines.append("last30_cost_usd=\(snapshot.last30DaysCostUSD?.description ?? "nil")")
-                    return lines.joined(separator: "\n")
-                } catch {
-                    lines.append("Local log scan failed: \(error.localizedDescription)")
-                    return lines.joined(separator: "\n")
-                }
             case .oauth:
                 lines.append("OAuth source selected.")
                 return lines.joined(separator: "\n")

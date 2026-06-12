@@ -17,6 +17,7 @@ struct UsageProgressBar: View {
     let accessibilityLabel: String
     let pacePercent: Double?
     let paceOnTop: Bool
+    let warningMarkerPercents: [Double]
     @Environment(\.menuItemHighlighted) private var isHighlighted
     @Environment(\.displayScale) private var displayScale
 
@@ -25,13 +26,15 @@ struct UsageProgressBar: View {
         tint: Color,
         accessibilityLabel: String,
         pacePercent: Double? = nil,
-        paceOnTop: Bool = true)
+        paceOnTop: Bool = true,
+        warningMarkerPercents: [Double] = [])
     {
         self.percent = percent
         self.tint = tint
         self.accessibilityLabel = accessibilityLabel
         self.pacePercent = pacePercent
         self.paceOnTop = paceOnTop
+        self.warningMarkerPercents = warningMarkerPercents
     }
 
     private var clamped: Double {
@@ -51,6 +54,9 @@ struct UsageProgressBar: View {
             let stripeInset = 1 / scale
             let tipOffset = paceWidth - tipWidth + (Self.paceStripeSpan(for: scale) / 2) + stripeInset
             let showTip = self.pacePercent != nil && tipWidth > 0.5
+            let markerPercents = self.warningMarkerPercents
+                .map(Self.clampedPercent)
+                .filter { $0 > 0 && $0 < 100 }
 
             let cornerRadius = size.height / 2
             let cornerSize = CGSize(width: cornerRadius, height: cornerRadius)
@@ -69,6 +75,20 @@ struct UsageProgressBar: View {
                 context.fill(
                     fillPath,
                     with: .color(MenuHighlightStyle.progressTint(self.isHighlighted, fallback: self.tint)))
+            }
+
+            if !markerPercents.isEmpty {
+                let markerColor = Self.warningMarkerColor(isHighlighted: self.isHighlighted)
+                for markerPercent in markerPercents {
+                    let x = size.width * markerPercent / 100
+                    let markerRect = Self.warningMarkerRect(x: x, size: size, scale: scale)
+                    let markerPath = Path { p in
+                        p.addRoundedRect(
+                            in: markerRect,
+                            cornerSize: CGSize(width: markerRect.width / 2, height: markerRect.width / 2))
+                    }
+                    context.fill(markerPath, with: .color(markerColor))
+                }
             }
 
             // Pace tip: punch-out + center stripe drawn within the canvas context using Core Graphics
@@ -147,6 +167,25 @@ struct UsageProgressBar: View {
         })
 
         return (punchedStripe, centerStripe)
+    }
+
+    nonisolated static func warningMarkerRect(x: CGFloat, size: CGSize, scale rawScale: CGFloat) -> CGRect {
+        let scale = max(rawScale, 1)
+        let width = max(1 / scale, 1)
+        let height = min(size.height, max(1 / scale, size.height * 0.55))
+        let align: (CGFloat) -> CGFloat = { value in
+            (value * scale).rounded() / scale
+        }
+
+        return CGRect(
+            x: align(x - width / 2),
+            y: align((size.height - height) / 2),
+            width: width,
+            height: align(height))
+    }
+
+    nonisolated static func warningMarkerColor(isHighlighted: Bool) -> Color {
+        isHighlighted ? .white.opacity(0.72) : .primary.opacity(0.32)
     }
 
     private static func clampedPercent(_ value: Double?) -> Double {

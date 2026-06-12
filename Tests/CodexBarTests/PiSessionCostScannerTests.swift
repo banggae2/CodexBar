@@ -92,6 +92,58 @@ struct PiSessionCostScannerTests {
     }
 
     @Test
+    func `pi scanner keeps ambiguous claude errors priced`() throws {
+        let env = try CostUsageTestEnvironment()
+        defer { env.cleanup() }
+
+        let day = try env.makeLocalNoon(year: 2026, month: 6, day: 9)
+        let claudeEntry: [String: Any] = [
+            "type": "message",
+            "timestamp": env.isoString(for: day),
+            "message": [
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": "claude-fable-5",
+                "stopReason": "error",
+                "errorMessage": "An unknown error occurred",
+                "timestamp": Int(day.timeIntervalSince1970 * 1000),
+                "usage": [
+                    "input": 100,
+                    "output": 0,
+                    "cacheRead": 20,
+                    "cacheWrite": 10,
+                    "totalTokens": 130,
+                ],
+            ],
+        ]
+
+        _ = try env.writePiSessionFile(
+            relativePath: "2026-06-09T10-00-00-000Z_refusal.jsonl",
+            contents: env.jsonl([claudeEntry]))
+
+        let report = PiSessionCostScanner.loadDailyReport(
+            provider: .claude,
+            since: day,
+            until: day,
+            now: day,
+            options: PiSessionCostScanner.Options(
+                piSessionsRoot: env.piSessionsRoot,
+                cacheRoot: env.cacheRoot,
+                refreshMinIntervalSeconds: 0))
+
+        #expect(report.data.count == 1)
+        #expect(report.data.first?.totalTokens == 130)
+        let expectedCost = CostUsagePricing.claudeCostUSD(
+            model: "claude-fable-5",
+            inputTokens: 100,
+            cacheReadInputTokens: 20,
+            cacheCreationInputTokens: 10,
+            outputTokens: 0)
+
+        #expect(abs((report.data.first?.costUSD ?? 0) - (expectedCost ?? 0)) < 0.000001)
+    }
+
+    @Test
     func `pi scanner uses model change fallback and assistant timestamp day`() throws {
         let env = try CostUsageTestEnvironment()
         defer { env.cleanup() }
@@ -417,6 +469,199 @@ struct PiSessionCostScannerTests {
         #expect(report.data.count == 1)
         #expect(report.data.first?.totalTokens == 99)
         #expect(abs((report.data.first?.costUSD ?? 0) - (expectedCost ?? 0)) < 0.000001)
+    }
+
+    @Test
+    func `pi scanner preserves per-message threshold pricing`() throws {
+        let env = try CostUsageTestEnvironment()
+        defer { env.cleanup() }
+
+        let day = try env.makeLocalNoon(year: 2026, month: 5, day: 9)
+        let model = "claude-sonnet-4-5"
+        let firstAssistant: [String: Any] = [
+            "type": "message",
+            "timestamp": env.isoString(for: day),
+            "message": [
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": model,
+                "timestamp": Int(day.timeIntervalSince1970 * 1000),
+                "usage": [
+                    "input": 150_000,
+                    "output": 0,
+                    "totalTokens": 150_000,
+                ],
+            ],
+        ]
+        let secondAssistant: [String: Any] = [
+            "type": "message",
+            "timestamp": env.isoString(for: day.addingTimeInterval(1)),
+            "message": [
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": model,
+                "timestamp": Int(day.addingTimeInterval(1).timeIntervalSince1970 * 1000),
+                "usage": [
+                    "input": 150_000,
+                    "output": 0,
+                    "totalTokens": 150_000,
+                ],
+            ],
+        ]
+
+        _ = try env.writePiSessionFile(
+            relativePath: "2026-05-09T10-00-00-000Z_threshold.jsonl",
+            contents: env.jsonl([firstAssistant, secondAssistant]))
+
+        let report = PiSessionCostScanner.loadDailyReport(
+            provider: .claude,
+            since: day,
+            until: day,
+            now: day,
+            options: PiSessionCostScanner.Options(
+                piSessionsRoot: env.piSessionsRoot,
+                cacheRoot: env.cacheRoot,
+                refreshMinIntervalSeconds: 0))
+        let expectedRequestCost = CostUsagePricing.claudeCostUSD(
+            model: model,
+            inputTokens: 150_000,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            outputTokens: 0,
+            modelsDevCacheRoot: env.cacheRoot) ?? 0
+        let aggregateCost = CostUsagePricing.claudeCostUSD(
+            model: model,
+            inputTokens: 300_000,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            outputTokens: 0,
+            modelsDevCacheRoot: env.cacheRoot) ?? 0
+        let expectedCost = expectedRequestCost * 2
+
+        #expect(report.data.count == 1)
+        #expect(report.data.first?.totalTokens == 300_000)
+        #expect(abs((report.data.first?.costUSD ?? 0) - expectedCost) < 0.000001)
+        #expect(abs((report.data.first?.costUSD ?? 0) - aggregateCost) > 0.000001)
+        #expect(abs((report.data.first?.modelBreakdowns?.first?.costUSD ?? 0) - expectedCost) < 0.000001)
+    }
+
+    @Test
+    func `pi scanner ignores v2 cache with stale claude pricing`() throws {
+        let env = try CostUsageTestEnvironment()
+        defer { env.cleanup() }
+
+        let day = try env.makeLocalNoon(year: 2026, month: 5, day: 10)
+        let model = "claude-sonnet-4-5"
+        let firstAssistant: [String: Any] = [
+            "type": "message",
+            "timestamp": env.isoString(for: day),
+            "message": [
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": model,
+                "timestamp": Int(day.timeIntervalSince1970 * 1000),
+                "usage": [
+                    "input": 150_000,
+                    "output": 0,
+                    "totalTokens": 150_000,
+                ],
+            ],
+        ]
+        let secondAssistant: [String: Any] = [
+            "type": "message",
+            "timestamp": env.isoString(for: day.addingTimeInterval(1)),
+            "message": [
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": model,
+                "timestamp": Int(day.addingTimeInterval(1).timeIntervalSince1970 * 1000),
+                "usage": [
+                    "input": 150_000,
+                    "output": 0,
+                    "totalTokens": 150_000,
+                ],
+            ],
+        ]
+
+        let fileURL = try env.writePiSessionFile(
+            relativePath: "2026-05-10T10-00-00-000Z_threshold.jsonl",
+            contents: env.jsonl([firstAssistant, secondAssistant]))
+        let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let mtime = try #require(attrs[.modificationDate] as? Date)
+        let size = try #require((attrs[.size] as? NSNumber)?.int64Value)
+
+        let requestCost = CostUsagePricing.claudeCostUSD(
+            model: model,
+            inputTokens: 150_000,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            outputTokens: 0,
+            modelsDevCacheRoot: env.cacheRoot) ?? 0
+        let aggregateCost = CostUsagePricing.claudeCostUSD(
+            model: model,
+            inputTokens: 300_000,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            outputTokens: 0,
+            modelsDevCacheRoot: env.cacheRoot) ?? 0
+        let aggregatePacked = PiPackedUsage(
+            inputTokens: 300_000,
+            totalTokens: 300_000,
+            costNanos: Int64((aggregateCost * 1_000_000_000).rounded()),
+            costSampleCount: 2,
+            usageSampleCount: 2)
+        let dayKey = "2026-05-10"
+        let contributions = [
+            UsageProvider.claude.rawValue: [
+                dayKey: [
+                    model: aggregatePacked,
+                ],
+            ],
+        ]
+        let oldFileUsage = PiSessionFileUsage(
+            mtimeUnixMs: Int64(mtime.timeIntervalSince1970 * 1000),
+            size: size,
+            parsedBytes: size,
+            lastModelContext: nil,
+            contributions: contributions)
+        var oldCache = PiSessionCostCache(version: 2)
+        oldCache.lastScanUnixMs = Int64(day.timeIntervalSince1970 * 1000)
+        oldCache.scanSinceKey = dayKey
+        oldCache.scanUntilKey = dayKey
+        oldCache.daysByProvider = contributions
+        oldCache.files = [fileURL.path: oldFileUsage]
+        let oldCacheURL = env.cacheRoot
+            .appendingPathComponent("cost-usage", isDirectory: true)
+            .appendingPathComponent("pi-sessions-v2.json", isDirectory: false)
+        try FileManager.default.createDirectory(
+            at: oldCacheURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try JSONEncoder().encode(oldCache).write(to: oldCacheURL)
+
+        let report = PiSessionCostScanner.loadDailyReport(
+            provider: .claude,
+            since: day,
+            until: day,
+            now: day,
+            options: PiSessionCostScanner.Options(
+                piSessionsRoot: env.piSessionsRoot,
+                cacheRoot: env.cacheRoot,
+                refreshMinIntervalSeconds: 3600))
+
+        let expectedCost = requestCost * 2
+        #expect(report.data.count == 1)
+        #expect(report.data.first?.totalTokens == 300_000)
+        #expect(abs((report.data.first?.costUSD ?? 0) - expectedCost) < 0.000001)
+        #expect(abs((report.data.first?.costUSD ?? 0) - aggregateCost) > 0.000001)
+
+        let newCacheURL = PiSessionCostCacheIO.cacheFileURL(cacheRoot: env.cacheRoot)
+        #expect(FileManager.default.fileExists(atPath: newCacheURL.path))
+        let newCache = PiSessionCostCacheIO.load(cacheRoot: env.cacheRoot)
+        let rebuilt = newCache.daysByProvider[UsageProvider.claude.rawValue]?[dayKey]?[model]
+        #expect(newCacheURL.lastPathComponent == "pi-sessions-v3.json")
+        #expect(newCache.version == 3)
+        #expect(rebuilt?.usageSampleCount == 2)
+        #expect(rebuilt?.costSampleCount == 2)
     }
 
     @Test

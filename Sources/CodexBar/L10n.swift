@@ -35,6 +35,11 @@ enum L10n {
     private static let developmentLanguage = "en"
 
     private static func appLocaleIdentifier() -> String? {
+        if let override = CodexBarLocalizationOverride.appLanguage,
+           let language = AppLanguage(rawValue: override)
+        {
+            return language.localeIdentifier
+        }
         guard let raw = UserDefaults.standard.string(forKey: AppLanguage.userDefaultsKey),
               let language = AppLanguage(rawValue: raw)
         else { return nil }

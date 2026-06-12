@@ -5,6 +5,7 @@ enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
     case percent
     case pace
     case both
+    case resetTime
 
     var id: String {
         self.rawValue
@@ -12,17 +13,19 @@ enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .percent: L10n.string("menuBarDisplay.percent")
-        case .pace: L10n.string("menuBarDisplay.pace")
-        case .both: L10n.string("menuBarDisplay.both")
+        case .percent: L("display_mode_percent")
+        case .pace: L("display_mode_pace")
+        case .both: L("display_mode_both")
+        case .resetTime: L("display_mode_reset_time")
         }
     }
 
     var description: String {
         switch self {
-        case .percent: L10n.string("menuBarDisplay.percent.description")
-        case .pace: L10n.string("menuBarDisplay.pace.description")
-        case .both: L10n.string("menuBarDisplay.both.description")
+        case .percent: L("display_mode_percent_desc")
+        case .pace: L("display_mode_pace_desc")
+        case .both: L("display_mode_both_desc")
+        case .resetTime: L("display_mode_reset_time_desc")
         }
     }
 }

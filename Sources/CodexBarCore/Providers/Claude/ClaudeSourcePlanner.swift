@@ -6,8 +6,6 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
     public let webExtrasEnabled: Bool
     public let hasWebSession: Bool
     public let hasCLI: Bool
-    public let hasLocalLogs: Bool
-    public let hasDashboardPluginCache: Bool
     public let hasOAuthCredentials: Bool
 
     public init(
@@ -16,8 +14,6 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         webExtrasEnabled: Bool,
         hasWebSession: Bool,
         hasCLI: Bool,
-        hasLocalLogs: Bool = true,
-        hasDashboardPluginCache: Bool = true,
         hasOAuthCredentials: Bool)
     {
         self.runtime = runtime
@@ -25,19 +21,17 @@ public struct ClaudeSourcePlanningInput: Equatable, Sendable {
         self.webExtrasEnabled = webExtrasEnabled
         self.hasWebSession = hasWebSession
         self.hasCLI = hasCLI
-        self.hasLocalLogs = hasLocalLogs
-        self.hasDashboardPluginCache = hasDashboardPluginCache
         self.hasOAuthCredentials = hasOAuthCredentials
     }
 }
 
 public enum ClaudeSourcePlanReason: String, Equatable, Sendable {
     case explicitSourceSelection = "explicit-source-selection"
-    case appAutoPreferredCLI = "app-auto-preferred-cli"
-    case cliAutoPreferredCLI = "cli-auto-preferred-cli"
-    case autoFallbackDashboardPlugin = "auto-fallback-dashboard-plugin"
-    case autoFallbackLocalLog = "auto-fallback-local-log"
-    case autoFallbackOAuthAPI = "auto-fallback-oauth-api"
+    case appAutoPreferredOAuth = "app-auto-preferred-oauth"
+    case appAutoFallbackCLI = "app-auto-fallback-cli"
+    case appAutoFallbackWeb = "app-auto-fallback-web"
+    case cliAutoPreferredWeb = "cli-auto-preferred-web"
+    case cliAutoFallbackCLI = "cli-auto-fallback-cli"
 }
 
 public struct ClaudeFetchPlanStep: Equatable, Sendable {
@@ -77,7 +71,7 @@ public struct ClaudeFetchPlan: Equatable, Sendable {
         switch self.input.selectedDataSource {
         case .auto:
             self.availableSteps.first
-        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
+        case .api, .oauth, .web, .cli:
             self.orderedSteps.first
         }
     }
@@ -86,7 +80,7 @@ public struct ClaudeFetchPlan: Equatable, Sendable {
         switch self.input.selectedDataSource {
         case .auto:
             self.availableSteps
-        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
+        case .api, .oauth, .web, .cli:
             self.orderedSteps
         }
     }
@@ -180,21 +174,24 @@ public enum ClaudeSourcePlanner {
             switch input.runtime {
             case .app:
                 [
-                    self.step(.cli, reason: .appAutoPreferredCLI, input: input),
-                    self.step(.claudeDashboardPlugin, reason: .autoFallbackDashboardPlugin, input: input),
-                    self.step(.log, reason: .autoFallbackLocalLog, input: input),
-                    self.step(.oauth, reason: .autoFallbackOAuthAPI, input: input),
+                    self.step(.oauth, reason: .appAutoPreferredOAuth, input: input),
+                    self.step(.cli, reason: .appAutoFallbackCLI, input: input),
+                    self.step(.web, reason: .appAutoFallbackWeb, input: input),
                 ]
             case .cli:
                 [
-                    self.step(.cli, reason: .cliAutoPreferredCLI, input: input),
-                    self.step(.claudeDashboardPlugin, reason: .autoFallbackDashboardPlugin, input: input),
-                    self.step(.log, reason: .autoFallbackLocalLog, input: input),
-                    self.step(.oauth, reason: .autoFallbackOAuthAPI, input: input),
+                    self.step(.web, reason: .cliAutoPreferredWeb, input: input),
+                    self.step(.cli, reason: .cliAutoFallbackCLI, input: input),
                 ]
             }
-        case .cli, .claudeDashboardPlugin, .log, .oauth, .web:
-            [self.step(input.selectedDataSource, reason: .explicitSourceSelection, input: input)]
+        case .api:
+            [self.step(.api, reason: .explicitSourceSelection, input: input)]
+        case .oauth:
+            [self.step(.oauth, reason: .explicitSourceSelection, input: input)]
+        case .web:
+            [self.step(.web, reason: .explicitSourceSelection, input: input)]
+        case .cli:
+            [self.step(.cli, reason: .explicitSourceSelection, input: input)]
         }
     }
 
@@ -214,18 +211,14 @@ public enum ClaudeSourcePlanner {
         input: ClaudeSourcePlanningInput) -> Bool
     {
         switch dataSource {
-        case .auto:
+        case .auto, .api:
             false
-        case .cli:
-            input.hasCLI
-        case .claudeDashboardPlugin:
-            input.hasDashboardPluginCache
-        case .log:
-            input.hasLocalLogs
         case .oauth:
             input.hasOAuthCredentials
         case .web:
-            false
+            input.hasWebSession
+        case .cli:
+            input.hasCLI
         }
     }
 }

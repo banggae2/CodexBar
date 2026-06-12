@@ -5,6 +5,7 @@ import FoundationNetworking
 
 public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
     case unauthorized
+    case rateLimited(retryAfter: Date?)
     case invalidResponse
     case serverError(Int, String?)
     case networkError(Error)
@@ -13,6 +14,9 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
         switch self {
         case .unauthorized:
             return "Claude OAuth request unauthorized. Run `claude` to re-authenticate."
+        case .rateLimited:
+            return "Claude OAuth usage endpoint is rate limited by Anthropic right now. Wait a few minutes, "
+                + "then click Refresh. If it keeps happening, run `claude logout && claude login`, then try again."
         case .invalidResponse:
             return "Claude OAuth response was invalid."
         case let .serverError(code, body):
@@ -31,62 +35,61 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
 }
 
 enum ClaudeOAuthUsageFetcher {
-    private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    private static let baseURL = "https://api.anthropic.com"
+    private static let usagePath = "/api/oauth/usage"
+    private static let betaHeader = "oauth-2025-04-20"
     private static let fallbackClaudeCodeVersion = "2.1.0"
-    #if DEBUG
-    @TaskLocal private static var dataLoaderOverride: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
-    #endif
 
     static func fetchUsage(accessToken: String) async throws -> OAuthUsageResponse {
-        var request = URLRequest(url: self.usageURL, timeoutInterval: 5)
+        if let blockedUntil = ClaudeOAuthUsageRateLimitGate.blockedUntil() {
+            throw ClaudeOAuthFetchError.rateLimited(retryAfter: blockedUntil)
+        }
+
+        guard let url = URL(string: baseURL + usagePath) else {
+            throw ClaudeOAuthFetchError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(self.claudeCodeUserAgent(), forHTTPHeaderField: "User-Agent")
-        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        // OAuth usage endpoint currently requires the beta header.
+        request.setValue(Self.betaHeader, forHTTPHeaderField: "anthropic-beta")
+        request.setValue(Self.claudeCodeUserAgent(), forHTTPHeaderField: "User-Agent")
 
-        let data: Data
-        let response: URLResponse
         do {
-            #if DEBUG
-            if let dataLoaderOverride {
-                (data, response) = try await dataLoaderOverride(request)
-            } else {
-                (data, response) = try await URLSession.shared.data(for: request)
+            let response = try await ProviderHTTPClient.shared.response(for: request)
+            let data = response.data
+            switch response.statusCode {
+            case 200:
+                let usage = try Self.decodeUsageResponse(data)
+                ClaudeOAuthUsageRateLimitGate.recordSuccess()
+                return usage
+            case 401:
+                throw ClaudeOAuthFetchError.unauthorized
+            case 429:
+                let retryAfter = Self.retryAfterDate(from: response.response)
+                ClaudeOAuthUsageRateLimitGate.recordRateLimit(retryAfter: retryAfter)
+                throw ClaudeOAuthFetchError.rateLimited(
+                    retryAfter: ClaudeOAuthUsageRateLimitGate.currentBlockedUntil() ?? retryAfter)
+            case 403:
+                let body = String(data: data, encoding: .utf8)
+                throw ClaudeOAuthFetchError.serverError(response.statusCode, body)
+            default:
+                let body = String(data: data, encoding: .utf8)
+                throw ClaudeOAuthFetchError.serverError(response.statusCode, body)
             }
-            #else
-            (data, response) = try await URLSession.shared.data(for: request)
-            #endif
+        } catch let error as ClaudeOAuthFetchError {
+            throw error
         } catch {
             throw ClaudeOAuthFetchError.networkError(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw ClaudeOAuthFetchError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8)
-            if http.statusCode == 401 {
-                throw ClaudeOAuthFetchError.unauthorized
-            }
-            throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
-        }
-
-        do {
-            return try self.decodeUsageResponse(data)
-        } catch {
-            throw ClaudeOAuthFetchError.invalidResponse
         }
     }
 
     static func decodeUsageResponse(_ data: Data) throws -> OAuthUsageResponse {
         let decoder = JSONDecoder()
-        if let envelope = try? decoder.decode(OAuthUsageEnvelope.self, from: data),
-           let usage = envelope.data
-        {
-            return usage
-        }
         return try decoder.decode(OAuthUsageResponse.self, from: data)
     }
 
@@ -97,6 +100,23 @@ enum ClaudeOAuthUsageFetcher {
         if let date = formatter.date(from: string) { return date }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: string)
+    }
+
+    private static func retryAfterDate(from response: HTTPURLResponse, now: Date = Date()) -> Date? {
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        else { return nil }
+
+        if let seconds = TimeInterval(raw), seconds >= 0 {
+            return now.addingTimeInterval(seconds)
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+        return formatter.date(from: raw)
     }
 
     private static func claudeCodeUserAgent() -> String {
@@ -118,19 +138,13 @@ enum ClaudeOAuthUsageFetcher {
     }
 }
 
-private struct OAuthUsageEnvelope: Decodable {
-    let data: OAuthUsageResponse?
-}
-
 struct OAuthUsageResponse: Decodable {
     let fiveHour: OAuthUsageWindow?
     let sevenDay: OAuthUsageWindow?
     let sevenDayOAuthApps: OAuthUsageWindow?
     let sevenDayOpus: OAuthUsageWindow?
     let sevenDaySonnet: OAuthUsageWindow?
-    let sevenDayDesign: OAuthUsageWindow?
     let sevenDayRoutines: OAuthUsageWindow?
-    let sevenDayDesignSourceKey: String?
     let sevenDayRoutinesSourceKey: String?
     let iguanaNecktie: OAuthUsageWindow?
     let extraUsage: OAuthExtraUsage?
@@ -142,17 +156,6 @@ struct OAuthUsageResponse: Decodable {
         self.sevenDayOAuthApps = Self.decodeWindow(in: container, keys: ["seven_day_oauth_apps"])
         self.sevenDayOpus = Self.decodeWindow(in: container, keys: ["seven_day_opus"])
         self.sevenDaySonnet = Self.decodeWindow(in: container, keys: ["seven_day_sonnet"])
-        let design = Self.decodeWindowWithSource(in: container, keys: [
-            "seven_day_design",
-            "seven_day_claude_design",
-            "claude_design",
-            "design",
-            "seven_day_omelette",
-            "omelette",
-            "omelette_promotional",
-        ])
-        self.sevenDayDesign = design.window
-        self.sevenDayDesignSourceKey = design.sourceKey
         let routines = Self.decodeWindowWithSource(in: container, keys: [
             "seven_day_routines",
             "seven_day_claude_routines",
@@ -257,13 +260,8 @@ extension ClaudeOAuthUsageFetcher {
         self.claudeCodeUserAgent(versionString: versionString)
     }
 
-    static func _withDataLoaderForTesting<T>(
-        _ loader: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse),
-        operation: () async throws -> T) async rethrows -> T
-    {
-        try await self.$dataLoaderOverride.withValue(loader) {
-            try await operation()
-        }
+    static func _retryAfterDateForTesting(from response: HTTPURLResponse, now: Date) -> Date? {
+        self.retryAfterDate(from: response, now: now)
     }
 }
 #endif

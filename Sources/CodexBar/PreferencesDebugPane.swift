@@ -27,10 +27,10 @@ struct DebugPane: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 20) {
-                SettingsSection(title: L10n.string("Logging")) {
+                SettingsSection(title: L("section_logging")) {
                     PreferenceToggleRow(
-                        title: L10n.string("Enable file logging"),
-                        subtitle: L10n.string("Write logs to file format", self.fileLogPath),
+                        title: L("enable_file_logging"),
+                        subtitle: String(format: L("enable_file_logging_subtitle"), self.fileLogPath),
                         binding: self.$debugFileLoggingEnabled)
                         .onChange(of: self.debugFileLoggingEnabled) { _, newValue in
                             if self.settings.debugFileLoggingEnabled != newValue {
@@ -40,14 +40,14 @@ struct DebugPane: View {
 
                     HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(L10n.string("Verbosity"))
+                            Text(L("verbosity_title"))
                                 .font(.body)
-                            Text(L10n.string("Controls how much detail is logged."))
+                            Text(L("verbosity_subtitle"))
                                 .font(.footnote)
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Picker(L10n.string("Verbosity"), selection: self.$settings.debugLogLevel) {
+                        Picker(L("Verbosity"), selection: self.$settings.debugLogLevel) {
                             ForEach(CodexBarLog.Level.allCases) { level in
                                 Text(level.displayName).tag(level)
                             }
@@ -60,32 +60,31 @@ struct DebugPane: View {
                     Button {
                         NSWorkspace.shared.open(CodexBarLog.fileLogURL)
                     } label: {
-                        Label(L10n.string("Open log file"), systemImage: "doc.text.magnifyingglass")
+                        Label(L("open_log_file"), systemImage: "doc.text.magnifyingglass")
                     }
                     .controlSize(.small)
                 }
 
                 SettingsSection {
                     PreferenceToggleRow(
-                        title: L10n.string("Force animation on next refresh"),
-                        subtitle: L10n.string("Temporarily shows the loading animation after the next refresh."),
+                        title: L("force_animation_next_refresh"),
+                        subtitle: L("force_animation_next_refresh_subtitle"),
                         binding: self.$store.debugForceAnimation)
                 }
 
                 SettingsSection(
-                    title: L10n.string("Loading animations"),
-                    caption: L10n.string(
-                        "Pick a pattern and replay it in the menu bar. \"Random\" keeps the existing behavior."))
+                    title: L("section_loading_animations"),
+                    caption: L("loading_animations_caption"))
                 {
-                    Picker(L10n.string("Animation pattern"), selection: self.animationPatternBinding) {
-                        Text(L10n.string("Random (default)")).tag(nil as LoadingPattern?)
+                    Picker(L("Animation pattern"), selection: self.animationPatternBinding) {
+                        Text(L("animation_random_default")).tag(nil as LoadingPattern?)
                         ForEach(LoadingPattern.allCases) { pattern in
                             Text(pattern.displayName).tag(Optional(pattern))
                         }
                     }
                     .pickerStyle(.radioGroup)
 
-                    Button(L10n.string("Replay selected animation")) {
+                    Button(L("replay_selected_animation")) {
                         self.replaySelectedAnimation()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -93,16 +92,16 @@ struct DebugPane: View {
                     Button {
                         NotificationCenter.default.post(name: .codexbarDebugBlinkNow, object: nil)
                     } label: {
-                        Label(L10n.string("Blink now"), systemImage: "eyes")
+                        Label(L("blink_now"), systemImage: "eyes")
                     }
                     .controlSize(.small)
                 }
 
                 SettingsSection(
-                    title: L10n.string("Probe logs"),
-                    caption: L10n.string("Fetch the latest probe output for debugging; Copy keeps the full text."))
+                    title: L("section_probe_logs"),
+                    caption: L("probe_logs_caption"))
                 {
-                    Picker(L10n.string("Provider"), selection: self.$currentLogProvider) {
+                    Picker(L("Provider"), selection: self.$currentLogProvider) {
                         Text("Codex").tag(UsageProvider.codex)
                         Text("Claude").tag(UsageProvider.claude)
                         Text("Cursor").tag(UsageProvider.cursor)
@@ -115,23 +114,23 @@ struct DebugPane: View {
 
                     HStack(spacing: 12) {
                         Button { self.loadLog(self.currentLogProvider) } label: {
-                            Label(L10n.string("Fetch log"), systemImage: "arrow.clockwise")
+                            Label(L("fetch_log"), systemImage: "arrow.clockwise")
                         }
                         .disabled(self.isLoadingLog)
 
                         Button { self.copyToPasteboard(self.logText) } label: {
-                            Label(L10n.string("Copy"), systemImage: "doc.on.doc")
+                            Label(L("copy"), systemImage: "doc.on.doc")
                         }
                         .disabled(self.logText.isEmpty)
 
                         Button { self.saveLog(self.currentLogProvider) } label: {
-                            Label(L10n.string("Save to file"), systemImage: "externaldrive.badge.plus")
+                            Label(L("save_to_file"), systemImage: "externaldrive.badge.plus")
                         }
                         .disabled(self.isLoadingLog && self.logText.isEmpty)
 
                         if self.currentLogProvider == .claude {
                             Button { self.loadClaudeDump() } label: {
-                                Label(L10n.string("Load parse dump"), systemImage: "doc.text.magnifyingglass")
+                                Label(L("load_parse_dump"), systemImage: "doc.text.magnifyingglass")
                             }
                             .disabled(self.isLoadingLog)
                         }
@@ -141,7 +140,7 @@ struct DebugPane: View {
                         self.settings.rerunProviderDetection()
                         self.loadLog(self.currentLogProvider)
                     } label: {
-                        Label(L10n.string("Re-run provider autodetect"), systemImage: "dot.radiowaves.left.and.right")
+                        Label(L("rerun_provider_autodetect"), systemImage: "dot.radiowaves.left.and.right")
                     }
                     .controlSize(.small)
 
@@ -167,10 +166,10 @@ struct DebugPane: View {
                 }
 
                 SettingsSection(
-                    title: L10n.string("Fetch strategy attempts"),
-                    caption: L10n.string("Last fetch pipeline decisions and errors for a provider."))
+                    title: L("section_fetch_strategy"),
+                    caption: L("fetch_strategy_caption"))
                 {
-                    Picker(L10n.string("Provider"), selection: self.$currentFetchProvider) {
+                    Picker(L("Provider"), selection: self.$currentFetchProvider) {
                         ForEach(UsageProvider.allCases, id: \.self) { provider in
                             Text(provider.rawValue.capitalized).tag(provider)
                         }
@@ -192,15 +191,14 @@ struct DebugPane: View {
 
                 if !self.settings.debugDisableKeychainAccess {
                     SettingsSection(
-                        title: L10n.string("OpenAI cookies"),
-                        caption: L10n.string(
-                            "Cookie import + WebKit scrape logs from the last OpenAI cookies attempt."))
+                        title: L("section_openai_cookies"),
+                        caption: L("openai_cookies_caption"))
                     {
                         HStack(spacing: 12) {
                             Button {
                                 self.copyToPasteboard(self.store.openAIDashboardCookieImportDebugLog ?? "")
                             } label: {
-                                Label(L10n.string("Copy"), systemImage: "doc.on.doc")
+                                Label(L("copy"), systemImage: "doc.on.doc")
                             }
                             .disabled((self.store.openAIDashboardCookieImportDebugLog ?? "").isEmpty)
                         }
@@ -209,8 +207,7 @@ struct DebugPane: View {
                             Text(
                                 self.store.openAIDashboardCookieImportDebugLog?.isEmpty == false
                                     ? (self.store.openAIDashboardCookieImportDebugLog ?? "")
-                                    : L10n.string(
-                                        "No log yet. Update OpenAI cookies in Providers → Codex to run an import."))
+                                    : L("no_log_yet"))
                                 .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -223,8 +220,8 @@ struct DebugPane: View {
                 }
 
                 SettingsSection(
-                    title: L10n.string("Caches"),
-                    caption: L10n.string("Clear cached cost scan results or browser cookie caches."))
+                    title: L("section_caches"),
+                    caption: L("caches_caption"))
                 {
                     let isTokenRefreshActive = self.store.isTokenRefreshInFlight(for: .codex)
                         || self.store.isTokenRefreshInFlight(for: .claude)
@@ -233,7 +230,7 @@ struct DebugPane: View {
                         Button {
                             Task { await self.clearCostCache() }
                         } label: {
-                            Label(L10n.string("Clear cost cache"), systemImage: "trash")
+                            Label(L("clear_cost_cache"), systemImage: "trash")
                         }
                         .disabled(self.isClearingCostCache || isTokenRefreshActive)
 
@@ -248,7 +245,7 @@ struct DebugPane: View {
                         Button {
                             self.clearCookieCache()
                         } label: {
-                            Label(L10n.string("Clear cookie cache"), systemImage: "trash")
+                            Label(L("clear_cookie_cache"), systemImage: "trash")
                         }
 
                         if let status = self.cookieCacheStatus {
@@ -260,11 +257,10 @@ struct DebugPane: View {
                 }
 
                 SettingsSection(
-                    title: L10n.string("Notifications"),
-                    caption: L10n.string(
-                        "Trigger test notifications for the 5-hour session window (depleted/restored)."))
+                    title: L("section_notifications"),
+                    caption: L("notifications_caption"))
                 {
-                    Picker(L10n.string("Provider"), selection: self.$currentLogProvider) {
+                    Picker(L("Provider"), selection: self.$currentLogProvider) {
                         Text("Codex").tag(UsageProvider.codex)
                         Text("Claude").tag(UsageProvider.claude)
                     }
@@ -275,27 +271,26 @@ struct DebugPane: View {
                         Button {
                             self.postSessionNotification(.depleted, provider: self.currentLogProvider)
                         } label: {
-                            Label(L10n.string("Post depleted"), systemImage: "bell.badge")
+                            Label(L("post_depleted"), systemImage: "bell.badge")
                         }
                         .controlSize(.small)
 
                         Button {
                             self.postSessionNotification(.restored, provider: self.currentLogProvider)
                         } label: {
-                            Label(L10n.string("Post restored"), systemImage: "bell")
+                            Label(L("post_restored"), systemImage: "bell")
                         }
                         .controlSize(.small)
                     }
                 }
 
                 SettingsSection(
-                    title: L10n.string("CLI sessions"),
-                    caption: L10n.string(
-                        "Keep Codex/Claude CLI sessions alive after a probe. Default exits once data is captured."))
+                    title: L("section_cli_sessions"),
+                    caption: L("cli_sessions_caption"))
                 {
                     PreferenceToggleRow(
-                        title: L10n.string("Keep CLI sessions alive"),
-                        subtitle: L10n.string("Skip teardown between probes (debug-only)."),
+                        title: L("keep_cli_sessions_alive"),
+                        subtitle: L("keep_cli_sessions_alive_subtitle"),
                         binding: self.$settings.debugKeepCLISessionsAlive)
 
                     Button {
@@ -303,29 +298,30 @@ struct DebugPane: View {
                             await CLIProbeSessionResetter.resetAll()
                         }
                     } label: {
-                        Label(L10n.string("Reset CLI sessions"), systemImage: "arrow.counterclockwise")
+                        Label(L("reset_cli_sessions"), systemImage: "arrow.counterclockwise")
                     }
                     .controlSize(.small)
                 }
 
                 #if DEBUG
                 SettingsSection(
-                    title: L10n.string("Error simulation"),
-                    caption: L10n.string("Inject a fake error message into the menu card for layout testing."))
+                    title: L("section_error_simulation"),
+                    caption: L("error_simulation_caption"))
                 {
-                    Picker(L10n.string("Provider"), selection: self.$currentErrorProvider) {
+                    Picker(L("Provider"), selection: self.$currentErrorProvider) {
                         Text("Codex").tag(UsageProvider.codex)
                         Text("Claude").tag(UsageProvider.claude)
                         Text("Gemini").tag(UsageProvider.gemini)
                         Text("Antigravity").tag(UsageProvider.antigravity)
                         Text("Augment").tag(UsageProvider.augment)
                         Text("Amp").tag(UsageProvider.amp)
+                        Text("T3 Chat").tag(UsageProvider.t3chat)
                         Text("Ollama").tag(UsageProvider.ollama)
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 360)
 
-                    TextField(L10n.string("Simulated error text"), text: self.$simulatedErrorText, axis: .vertical)
+                    TextField(L("Simulated error text"), text: self.$simulatedErrorText, axis: .vertical)
                         .lineLimit(4)
 
                     HStack(spacing: 12) {
@@ -334,14 +330,14 @@ struct DebugPane: View {
                                 self.simulatedErrorText,
                                 provider: self.currentErrorProvider)
                         } label: {
-                            Label(L10n.string("Set menu error"), systemImage: "exclamationmark.triangle")
+                            Label(L("set_menu_error"), systemImage: "exclamationmark.triangle")
                         }
                         .controlSize(.small)
 
                         Button {
                             self.store._setErrorForTesting(nil, provider: self.currentErrorProvider)
                         } label: {
-                            Label(L10n.string("Clear menu error"), systemImage: "xmark.circle")
+                            Label(L("clear_menu_error"), systemImage: "xmark.circle")
                         }
                         .controlSize(.small)
                     }
@@ -353,7 +349,7 @@ struct DebugPane: View {
                                 self.simulatedErrorText,
                                 provider: self.currentErrorProvider)
                         } label: {
-                            Label(L10n.string("Set cost error"), systemImage: "banknote")
+                            Label(L("set_cost_error"), systemImage: "banknote")
                         }
                         .controlSize(.small)
                         .disabled(!supportsTokenError)
@@ -361,7 +357,7 @@ struct DebugPane: View {
                         Button {
                             self.store._setTokenErrorForTesting(nil, provider: self.currentErrorProvider)
                         } label: {
-                            Label(L10n.string("Clear cost error"), systemImage: "xmark.circle")
+                            Label(L("clear_cost_error"), systemImage: "xmark.circle")
                         }
                         .controlSize(.small)
                         .disabled(!supportsTokenError)
@@ -370,20 +366,19 @@ struct DebugPane: View {
                 #endif
 
                 SettingsSection(
-                    title: L10n.string("CLI paths"),
-                    caption: L10n.string(
-                        "Resolved Codex binary and PATH layers; startup login PATH capture (short timeout)."))
+                    title: L("section_cli_paths"),
+                    caption: L("cli_paths_caption"))
                 {
-                    self.binaryRow(title: L10n.string("Codex binary"), value: self.store.pathDebugInfo.codexBinary)
-                    self.binaryRow(title: L10n.string("Claude binary"), value: self.store.pathDebugInfo.claudeBinary)
+                    self.binaryRow(title: L("codex_binary"), value: self.store.pathDebugInfo.codexBinary)
+                    self.binaryRow(title: L("claude_binary"), value: self.store.pathDebugInfo.claudeBinary)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.string("Effective PATH"))
+                        Text(L("effective_path"))
                             .font(.callout.weight(.semibold))
                         ScrollView {
                             Text(
                                 self.store.pathDebugInfo.effectivePATH.isEmpty
-                                    ? L10n.string("Unavailable")
+                                    ? L("unavailable")
                                     : self.store.pathDebugInfo.effectivePATH)
                                 .font(.system(.footnote, design: .monospaced))
                                 .textSelection(.enabled)
@@ -397,7 +392,7 @@ struct DebugPane: View {
 
                     if let loginPATH = self.store.pathDebugInfo.loginShellPATH {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(L10n.string("Login shell PATH (startup capture)"))
+                            Text(L("login_shell_path"))
                                 .font(.callout.weight(.semibold))
                             ScrollView {
                                 Text(loginPATH)
@@ -443,7 +438,7 @@ struct DebugPane: View {
 
     private var displayedLog: String {
         if self.logText.isEmpty {
-            return self.isLoadingLog ? L10n.string("Loading…") : L10n.string("No log yet. Fetch to load.")
+            return self.isLoadingLog ? L("loading") : L("no_log_yet_fetch")
         }
         return self.logText
     }
@@ -493,7 +488,7 @@ struct DebugPane: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.callout.weight(.semibold))
-            Text(value ?? L10n.string("Not found"))
+            Text(value ?? L("not_found"))
                 .font(.system(.footnote, design: .monospaced))
                 .foregroundStyle(value == nil ? .secondary : .primary)
         }
@@ -521,25 +516,25 @@ struct DebugPane: View {
         defer { self.isClearingCostCache = false }
 
         if let error = await self.store.clearCostUsageCache() {
-            self.costCacheStatus = L10n.string("Failed format", String(describing: error))
+            self.costCacheStatus = "Failed: \(error)"
             return
         }
 
-        self.costCacheStatus = L10n.string("Cleared.")
+        self.costCacheStatus = L("cleared")
     }
 
     private func clearCookieCache() {
         let cleared = CookieHeaderCache.clearAll()
         if cleared > 0 {
-            self.cookieCacheStatus = L10n.string("Cleared cookie cache providers format", cleared)
+            self.cookieCacheStatus = "Cleared \(cleared) provider\(cleared == 1 ? "" : "s")."
         } else {
-            self.cookieCacheStatus = L10n.string("No cached cookies found.")
+            self.cookieCacheStatus = "No cached cookies found."
         }
     }
 
     private func fetchAttemptsText(for provider: UsageProvider) -> String {
         let attempts = self.store.fetchAttempts(for: provider)
-        guard !attempts.isEmpty else { return L10n.string("No fetch attempts yet.") }
+        guard !attempts.isEmpty else { return L("no_fetch_attempts") }
         return attempts.map { attempt in
             let kind = Self.fetchKindLabel(attempt.kind)
             var line = "\(attempt.strategyID) (\(kind))"

@@ -43,9 +43,11 @@ struct CodexBarApp: App {
 
         let preferencesSelection = PreferencesSelection()
         let settings = SettingsStore()
+        Self.applyLanguagePreference(from: settings)
+        configureUsageFormatterLocalizationProvider()
         let managedCodexAccountCoordinator = ManagedCodexAccountCoordinator()
         managedCodexAccountCoordinator.onManagedAccountsDidChange = {
-            _ = settings.persistResolvedCodexActiveSourceCorrectionIfNeeded()
+            _ = settings.refreshCodexAccountReconciliationAfterManagedAccountsDidChange()
         }
         _ = settings.persistResolvedCodexActiveSourceCorrectionIfNeeded()
         let fetcher = UsageFetcher()
@@ -89,7 +91,10 @@ struct CodexBarApp: App {
                 updater: self.appDelegate.updaterController,
                 selection: self.preferencesSelection,
                 managedCodexAccountCoordinator: self.managedCodexAccountCoordinator,
-                codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator)
+                codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator,
+                runProviderLoginFlow: { provider in
+                    await self.appDelegate.runProviderLoginFlow(provider)
+                })
         }
         .defaultSize(width: PreferencesTab.general.preferredWidth, height: PreferencesTab.general.preferredHeight)
         .windowResizability(.contentSize)
@@ -98,6 +103,15 @@ struct CodexBarApp: App {
     private func openSettings(tab: PreferencesTab) {
         self.preferencesSelection.tab = tab
         PreferencesWindowFocus.openSettingsWindow()
+    }
+
+    private static func applyLanguagePreference(from settings: SettingsStore) {
+        let language = settings.appLanguage
+        if language.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([language], forKey: "AppleLanguages")
+        }
     }
 }
 
@@ -111,6 +125,7 @@ protocol UpdaterProviding: AnyObject {
     var unavailableReason: String? { get }
     var updateStatus: UpdateStatus { get }
     func checkForUpdates(_ sender: Any?)
+    func installUpdate()
 }
 
 /// No-op updater used for debug builds and non-bundled runs to suppress Sparkle dialogs.
@@ -126,6 +141,7 @@ final class DisabledUpdaterController: UpdaterProviding {
     }
 
     func checkForUpdates(_ sender: Any?) {}
+    func installUpdate() {}
 }
 
 @MainActor
@@ -144,12 +160,25 @@ import Sparkle
 
 @MainActor
 final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDelegate {
+    private final class ImmediateInstallHandler: @unchecked Sendable {
+        private let handler: () -> Void
+
+        init(_ handler: @escaping () -> Void) {
+            self.handler = handler
+        }
+
+        func install() {
+            self.handler()
+        }
+    }
+
     private lazy var controller = SPUStandardUpdaterController(
         startingUpdater: false,
         updaterDelegate: self,
         userDriverDelegate: nil)
     let updateStatus = UpdateStatus()
     let unavailableReason: String? = nil
+    private var immediateInstallHandler: ImmediateInstallHandler?
 
     init(savedAutoUpdate: Bool) {
         super.init()
@@ -177,20 +206,59 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
         self.controller.checkForUpdates(sender)
     }
 
-    nonisolated func updater(_ updater: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
-        Task { @MainActor in
-            self.updateStatus.isUpdateReady = true
+    func installUpdate() {
+        guard let immediateInstallHandler else {
+            self.controller.checkForUpdates(nil)
+            return
         }
+
+        immediateInstallHandler.install()
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
+        _ = updater
+        _ = item
     }
 
     nonisolated func updater(_ updater: SPUUpdater, failedToDownloadUpdate item: SUAppcastItem, error: Error) {
+        _ = updater
+        _ = item
+        _ = error
         Task { @MainActor in
+            self.immediateInstallHandler = nil
             self.updateStatus.isUpdateReady = false
         }
     }
 
     nonisolated func userDidCancelDownload(_ updater: SPUUpdater) {
+        _ = updater
         Task { @MainActor in
+            self.immediateInstallHandler = nil
+            self.updateStatus.isUpdateReady = false
+        }
+    }
+
+    nonisolated func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void)
+        -> Bool
+    {
+        _ = updater
+        _ = item
+        let installHandler = ImmediateInstallHandler(immediateInstallHandler)
+        Task { @MainActor in
+            self.immediateInstallHandler = installHandler
+            self.updateStatus.isUpdateReady = true
+        }
+        return true
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        _ = updater
+        _ = error
+        Task { @MainActor in
+            self.immediateInstallHandler = nil
             self.updateStatus.isUpdateReady = false
         }
     }
@@ -205,10 +273,12 @@ final class SparkleUpdaterController: NSObject, UpdaterProviding, SPUUpdaterDele
         Task { @MainActor in
             switch choice {
             case .install, .skip:
+                self.immediateInstallHandler = nil
                 self.updateStatus.isUpdateReady = false
             case .dismiss:
                 self.updateStatus.isUpdateReady = downloaded
             @unknown default:
+                self.immediateInstallHandler = nil
                 self.updateStatus.isUpdateReady = false
             }
         }
@@ -287,6 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var managedCodexAccountCoordinator: ManagedCodexAccountCoordinator?
     private var codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator?
     private var hasInstalledWeeklyLimitResetObserver = false
+    var terminateActiveProcessesForAppShutdown: () -> Void = {
+        TTYCommandRunner.terminateActiveProcessesForAppShutdown()
+    }
 
     func configure(_ dependencies: Dependencies) {
         self.store = dependencies.store
@@ -320,8 +393,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        self.statusController?.prepareForAppShutdown()
         self.confettiOverlayController.dismiss()
-        TTYCommandRunner.terminateActiveProcessesForAppShutdown()
+        self.dismissAppKitWindowsForShutdown()
+        self.terminateActiveProcessesForAppShutdown()
+    }
+
+    func runProviderLoginFlow(_ provider: UsageProvider) async {
+        self.ensureStatusController()
+        guard let statusController else { return }
+        await statusController.runLoginFlowFromSettings(provider: provider)
     }
 
     @objc private func handleWeeklyLimitResetNotification(_ notification: Notification) {
@@ -361,6 +442,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func classicIconURL() -> URL? {
         Bundle.main.url(forResource: "Icon-classic", withExtension: "icns")
+    }
+
+    private func dismissAppKitWindowsForShutdown() {
+        guard let app = NSApp else { return }
+        for window in app.windows {
+            window.orderOut(nil)
+        }
     }
 
     private func ensureStatusController() {

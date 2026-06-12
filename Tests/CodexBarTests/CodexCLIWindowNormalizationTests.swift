@@ -106,50 +106,69 @@ struct CodexCLIWindowNormalizationTests {
     }
 
     @Test
-    func `maps named RPC limit buckets into extra rate windows`() throws {
-        let json = """
-        {
-          "rateLimits": {
-            "limitId": "codex",
-            "primary": { "usedPercent": 34, "windowDurationMins": 300, "resetsAt": 1778501492 },
-            "secondary": { "usedPercent": 59, "windowDurationMins": 10080, "resetsAt": 1778590095 },
-            "credits": { "hasCredits": false, "unlimited": false, "balance": "0" },
-            "planType": "prolite",
-            "rateLimitReachedType": null
-          },
-          "rateLimitsByLimitId": {
-            "codex": {
-              "limitId": "codex",
-              "primary": { "usedPercent": 34, "windowDurationMins": 300, "resetsAt": 1778501492 },
-              "secondary": { "usedPercent": 59, "windowDurationMins": 10080, "resetsAt": 1778590095 }
-            },
-            "codex_bengalfox": {
-              "limitId": "codex_bengalfox",
-              "limitName": "GPT-5.3-Codex-Spark",
-              "primary": { "usedPercent": 100, "windowDurationMins": 300, "resetsAt": 1778502228 },
-              "secondary": { "usedPercent": 30, "windowDurationMins": 10080, "resetsAt": 1779089028 }
-            }
-          }
-        }
-        """
-
-        let snapshot = try UsageFetcher._mapCodexRPCLimitsResponseForTesting(Data(json.utf8))
-
-        #expect(snapshot.primary?.usedPercent == 34)
-        #expect(snapshot.secondary?.usedPercent == 59)
-        #expect(snapshot.extraRateWindows?.map(\.title) == [
-            "GPT-5.3-Codex-Spark 5h",
-            "GPT-5.3-Codex-Spark weekly",
-        ])
-        #expect(snapshot.extraRateWindows?.map(\.window.usedPercent) == [100, 30])
-        #expect(snapshot.extraRateWindows?.map(\.window.windowMinutes) == [300, 10080])
-    }
-
-    @Test
     func `throws when RPC limits contain no windows`() {
         #expect(throws: UsageError.noRateLimitsFound) {
             try UsageFetcher._mapCodexRPCLimitsForTesting(primary: nil, secondary: nil)
         }
+    }
+
+    @Test
+    func `maps plan only RPC limits into empty identified snapshot`() throws {
+        let snapshot = try UsageFetcher._mapCodexRPCLimitsForTesting(
+            primary: nil,
+            secondary: nil,
+            planType: "pro")
+
+        #expect(snapshot.primary == nil)
+        #expect(snapshot.secondary == nil)
+        #expect(snapshot.loginMethod(for: .codex) == "pro")
+        #expect(snapshot.rateLimitsUnavailable(for: .codex))
+    }
+
+    @Test
+    func `codex no rate limit error means limits unavailable without snapshot`() {
+        let availability = UsageLimitsAvailability.resolve(
+            provider: .codex,
+            snapshot: nil,
+            account: AccountInfo(email: "user@example.com", plan: nil),
+            lastErrorDescription: UsageError.noRateLimitsFound.errorDescription)
+
+        #expect(availability == .unavailable)
+    }
+
+    @Test
+    func `codex no rate limit error stays available without account context`() {
+        let availability = UsageLimitsAvailability.resolve(
+            provider: .codex,
+            snapshot: nil,
+            account: AccountInfo(email: nil, plan: nil),
+            lastErrorDescription: UsageError.noRateLimitsFound.errorDescription)
+
+        #expect(availability == .available)
+    }
+
+    @Test
+    func `codex windowed snapshot wins over stale no rate limit error`() {
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "user@example.com",
+            accountOrganization: nil,
+            loginMethod: "pro")
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 25,
+                windowMinutes: 300,
+                resetsAt: nil,
+                resetDescription: nil),
+            secondary: nil,
+            updatedAt: Date(),
+            identity: identity)
+        let availability = UsageLimitsAvailability.resolve(
+            provider: .codex,
+            snapshot: snapshot,
+            lastErrorDescription: UsageError.noRateLimitsFound.errorDescription)
+
+        #expect(availability == .available)
     }
 
     @Test

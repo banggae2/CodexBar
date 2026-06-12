@@ -2,8 +2,6 @@ import Foundation
 
 struct SettingsDefaultsState {
     var refreshFrequency: RefreshFrequency
-    var menuOpenRefreshEnabled: Bool
-    var appLanguageRaw: String?
     var launchAtLogin: Bool
     var debugMenuEnabled: Bool
     var debugDisableKeychainAccess: Bool
@@ -12,25 +10,27 @@ struct SettingsDefaultsState {
     var debugLoadingPatternRaw: String?
     var debugKeepCLISessionsAlive: Bool
     var statusChecksEnabled: Bool
-    var loginNotificationsEnabled: Bool
-    var augmentSessionExpiredNotificationsEnabled: Bool
     var sessionQuotaNotificationsEnabled: Bool
-    var sessionQuotaThresholdNotificationsEnabled: Bool
-    var sessionQuotaUsageThresholdsRaw: [Int]
-    var weeklyLimitThresholdNotificationsEnabled: Bool
-    var weeklyLimitRecoveryNotificationsEnabled: Bool
-    var weeklyLimitUsageThresholdsRaw: [Int]
+    var quotaWarningNotificationsEnabled: Bool
+    var quotaWarningThresholdsRaw: [Int]
+    var quotaWarningSessionThresholdsRaw: [Int]
+    var quotaWarningWeeklyThresholdsRaw: [Int]
+    var quotaWarningSessionEnabled: Bool
+    var quotaWarningWeeklyEnabled: Bool
+    var quotaWarningSoundEnabled: Bool
+    var quotaWarningMarkersVisible: Bool
+    var weeklyProgressWorkDays: Int?
     var usageBarsShowUsed: Bool
     var resetTimesShowAbsolute: Bool
-    var resetTimeDisplayStyleRaw: String?
+    var providerChangelogLinksEnabled: Bool
     var menuBarShowsBrandIconWithPercent: Bool
-    var menuBarUsageDisplayStyleRaw: String?
     var menuBarDisplayModeRaw: String?
-    var menuBarCompactHiddenProvidersRaw: [String]
+    var kiroMenuBarDisplayModeRaw: String?
     var historicalTrackingEnabled: Bool
-    var showAllTokenAccountsInMenu: Bool
+    var multiAccountMenuLayoutRaw: String
     var menuBarMetricPreferencesRaw: [String: String]
     var costUsageEnabled: Bool
+    var costUsageHistoryDays: Int
     var hidePersonalInfo: Bool
     var randomBlinkEnabled: Bool
     var confettiOnWeeklyLimitResetsEnabled: Bool
@@ -38,7 +38,6 @@ struct SettingsDefaultsState {
     var claudeOAuthKeychainPromptModeRaw: String?
     var claudeOAuthKeychainReadStrategyRaw: String?
     var claudeWebExtrasEnabledRaw: Bool
-    var claudePeakHoursEnabled: Bool
     var showOptionalCreditsAndExtraUsage: Bool
     var openAIWebAccessEnabled: Bool
     var openAIWebBatterySaverEnabled: Bool
@@ -50,4 +49,6 @@ struct SettingsDefaultsState {
     var mergedOverviewSelectedProvidersRaw: [String]
     var selectedMenuProviderRaw: String?
     var providerDetectionCompleted: Bool
+    var appLanguageRaw: String?
+    var terminalAppRaw: String?
 }

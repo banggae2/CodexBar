@@ -2,11 +2,10 @@ import Foundation
 
 public enum ClaudeUsageDataSource: String, CaseIterable, Identifiable, Sendable {
     case auto
-    case cli
-    case claudeDashboardPlugin = "claude-dashboard-plugin"
-    case log
+    case api
     case oauth
     case web
+    case cli
 
     public var id: String {
         self.rawValue
@@ -15,11 +14,10 @@ public enum ClaudeUsageDataSource: String, CaseIterable, Identifiable, Sendable 
     public var displayName: String {
         switch self {
         case .auto: "Auto"
-        case .cli: "CLI (PTY)"
-        case .claudeDashboardPlugin: "Claude Dashboard Plugin"
-        case .log: "Local logs"
+        case .api: "API (Admin key)"
         case .oauth: "OAuth API"
         case .web: "Web API (cookies)"
+        case .cli: "CLI (PTY)"
         }
     }
 
@@ -27,24 +25,14 @@ public enum ClaudeUsageDataSource: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .auto:
             "auto"
-        case .cli:
-            "cli"
-        case .claudeDashboardPlugin:
-            "claude-dashboard-plugin"
-        case .log:
-            "log"
+        case .api:
+            "api"
         case .oauth:
             "oauth"
         case .web:
             "web"
+        case .cli:
+            "cli"
         }
     }
-
-    public static let supportedClaudeCodeSources: [ClaudeUsageDataSource] = [
-        .auto,
-        .cli,
-        .claudeDashboardPlugin,
-        .log,
-        .oauth,
-    ]
 }

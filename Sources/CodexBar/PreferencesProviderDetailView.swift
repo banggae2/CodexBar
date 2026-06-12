@@ -1,6 +1,11 @@
 import CodexBarCore
 import SwiftUI
 
+enum ProviderMetricInlinePresentation: Equatable {
+    case progress
+    case status(String)
+}
+
 @MainActor
 struct ProviderDetailView<SupplementaryContent: View>: View {
     let provider: UsageProvider
@@ -11,7 +16,9 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
     let settingsPickers: [ProviderSettingsPickerDescriptor]
     let settingsToggles: [ProviderSettingsToggleDescriptor]
     let settingsFields: [ProviderSettingsFieldDescriptor]
+    let settingsActions: [ProviderSettingsActionsDescriptor]
     let settingsTokenAccounts: ProviderSettingsTokenAccountsDescriptor?
+    let settingsOrganizations: ProviderSettingsOrganizationsDescriptor?
     let errorDisplay: ProviderErrorDisplay?
     @Binding var isErrorExpanded: Bool
     let onCopyError: (String) -> Void
@@ -28,7 +35,9 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
         settingsPickers: [ProviderSettingsPickerDescriptor],
         settingsToggles: [ProviderSettingsToggleDescriptor],
         settingsFields: [ProviderSettingsFieldDescriptor],
+        settingsActions: [ProviderSettingsActionsDescriptor] = [],
         settingsTokenAccounts: ProviderSettingsTokenAccountsDescriptor?,
+        settingsOrganizations: ProviderSettingsOrganizationsDescriptor? = nil,
         errorDisplay: ProviderErrorDisplay?,
         isErrorExpanded: Binding<Bool>,
         onCopyError: @escaping (String) -> Void,
@@ -44,7 +53,9 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
         self.settingsPickers = settingsPickers
         self.settingsToggles = settingsToggles
         self.settingsFields = settingsFields
+        self.settingsActions = settingsActions
         self.settingsTokenAccounts = settingsTokenAccounts
+        self.settingsOrganizations = settingsOrganizations
         self.errorDisplay = errorDisplay
         self._isErrorExpanded = isErrorExpanded
         self.onCopyError = onCopyError
@@ -54,7 +65,16 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
     }
 
     static func metricTitle(provider: UsageProvider, metric: UsageMenuCardView.Model.Metric) -> String {
-        UsageMenuCardView.popupMetricTitle(provider: provider, metric: metric)
+        L(UsageMenuCardView.popupMetricTitle(provider: provider, metric: metric))
+    }
+
+    static func metricInlinePresentation(
+        _ metric: UsageMenuCardView.Model.Metric) -> ProviderMetricInlinePresentation
+    {
+        if let statusText = metric.statusText {
+            return .status(statusText)
+        }
+        return .progress
     }
 
     static func planRow(provider: UsageProvider, planText: String?) -> (label: String, value: String)? {
@@ -63,8 +83,8 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
         else {
             return nil
         }
-        guard provider == .openrouter else {
-            return (label: L10n.string("Plan"), value: rawPlan)
+        guard provider == .openrouter || provider == .mimo || provider == .moonshot else {
+            return (label: L("Plan"), value: rawPlan)
         }
 
         let prefix = "Balance:"
@@ -72,10 +92,10 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
             let valueStart = rawPlan.index(rawPlan.startIndex, offsetBy: prefix.count)
             let trimmedValue = rawPlan[valueStart...].trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmedValue.isEmpty {
-                return (label: L10n.string("Balance"), value: trimmedValue)
+                return (label: L("Balance"), value: trimmedValue)
             }
         }
-        return (label: L10n.string("Balance"), value: rawPlan)
+        return (label: L("Balance"), value: rawPlan)
     }
 
     var body: some View {
@@ -99,8 +119,8 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
 
                 if let errorDisplay {
                     ProviderErrorView(
-                        title: L10n.string(
-                            "Last provider fetch failed format",
+                        title: String(
+                            format: L("last_fetch_failed_with_provider"),
                             self.store.metadata(for: self.provider).displayName),
                         display: errorDisplay,
                         isExpanded: self.$isErrorExpanded,
@@ -108,7 +128,7 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
                 }
 
                 if self.hasSettings {
-                    ProviderSettingsSection(title: L10n.string("Settings")) {
+                    ProviderSettingsSection(title: L("Settings")) {
                         ForEach(self.settingsPickers) { picker in
                             ProviderSettingsPickerRowView(picker: picker)
                         }
@@ -120,6 +140,12 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
                         ForEach(self.settingsFields) { field in
                             ProviderSettingsFieldRowView(field: field)
                         }
+                        ForEach(self.settingsActions) { descriptor in
+                            ProviderSettingsActionsRowView(descriptor: descriptor)
+                        }
+                        if let organizations = self.settingsOrganizations {
+                            ProviderSettingsOrganizationsRowView(descriptor: organizations)
+                        }
                     }
                 }
 
@@ -127,8 +153,10 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
                     self.supplementarySettingsContent
                 }
 
+                ProviderQuotaWarningSettingsView(provider: self.provider, settings: self.store.settings)
+
                 if !self.settingsToggles.isEmpty {
-                    ProviderSettingsSection(title: L10n.string("Options")) {
+                    ProviderSettingsSection(title: L("Options")) {
                         ForEach(self.settingsToggles) { toggle in
                             ProviderSettingsToggleRowView(toggle: toggle)
                         }
@@ -145,21 +173,23 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
     private var hasSettings: Bool {
         !self.settingsPickers.isEmpty ||
             !self.settingsFields.isEmpty ||
-            self.settingsTokenAccounts != nil
+            !self.settingsActions.isEmpty ||
+            self.settingsTokenAccounts != nil ||
+            self.settingsOrganizations != nil
     }
 
     private var detailLabelWidth: CGFloat {
-        var infoLabels = [
-            L10n.string("State"),
-            L10n.string("Source"),
-            L10n.string("Version"),
-            L10n.string("Updated"),
-        ]
+        var infoLabels = [L("State"), L("Source"), L("Version"), L("Updated")]
         if self.store.status(for: self.provider) != nil {
-            infoLabels.append(L10n.string("Status"))
+            infoLabels.append(L("Status"))
         }
         if !self.model.email.isEmpty {
-            infoLabels.append(L10n.string("Account"))
+            infoLabels.append(L("Account"))
+        }
+        if self.provider == .kiro,
+           self.model.metrics.isEmpty == false
+        {
+            infoLabels.append(L("Auth"))
         }
         if let planRow = Self.planRow(provider: self.provider, planText: self.model.planText) {
             infoLabels.append(planRow.label)
@@ -169,13 +199,13 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
             Self.metricTitle(provider: self.provider, metric: metric)
         }
         if self.model.creditsText != nil {
-            metricLabels.append(L10n.string("Credits"))
+            metricLabels.append(L("Credits"))
         }
         if let providerCost = self.model.providerCost {
             metricLabels.append(providerCost.title)
         }
         if self.model.tokenUsage != nil {
-            metricLabels.append(L10n.string("Cost"))
+            metricLabels.append(L("Cost"))
         }
 
         let infoWidth = ProviderSettingsMetrics.labelWidth(
@@ -221,7 +251,7 @@ private struct ProviderDetailHeaderView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(L10n.string("Refresh"))
+                .help(L("Refresh"))
 
                 Toggle("", isOn: self.$isEnabled)
                     .labelsHidden()
@@ -281,26 +311,33 @@ private struct ProviderDetailInfoGrid: View {
     var body: some View {
         let status = self.store.status(for: self.provider)
         let source = self.store.sourceLabel(for: self.provider)
-        let version = self.store.version(for: self.provider) ?? L10n.string("not detected")
+        let version = self.store.version(for: self.provider) ?? L("not detected")
         let updated = self.updatedText
         let email = self.model.email
-        let enabledText = self.isEnabled ? L10n.string("Enabled") : L10n.string("Disabled")
+        let enabledText = self.isEnabled ? L("Enabled") : L("Disabled")
 
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-            ProviderDetailInfoRow(label: L10n.string("State"), value: enabledText, labelWidth: self.labelWidth)
-            ProviderDetailInfoRow(label: L10n.string("Source"), value: L10n.string(source), labelWidth: self.labelWidth)
-            ProviderDetailInfoRow(label: L10n.string("Version"), value: version, labelWidth: self.labelWidth)
-            ProviderDetailInfoRow(label: L10n.string("Updated"), value: updated, labelWidth: self.labelWidth)
+            ProviderDetailInfoRow(label: L("State"), value: enabledText, labelWidth: self.labelWidth)
+            ProviderDetailInfoRow(label: L("Source"), value: source, labelWidth: self.labelWidth)
+            ProviderDetailInfoRow(label: L("Version"), value: version, labelWidth: self.labelWidth)
+            ProviderDetailInfoRow(label: L("Updated"), value: updated, labelWidth: self.labelWidth)
 
             if let status {
                 ProviderDetailInfoRow(
-                    label: L10n.string("Status"),
-                    value: L10n.string(status.description ?? status.indicator.label),
+                    label: L("Status"),
+                    value: status.description ?? status.indicator.label,
                     labelWidth: self.labelWidth)
             }
 
             if !email.isEmpty {
-                ProviderDetailInfoRow(label: L10n.string("Account"), value: email, labelWidth: self.labelWidth)
+                ProviderDetailInfoRow(label: L("Account"), value: email, labelWidth: self.labelWidth)
+            }
+
+            if self.provider == .kiro,
+               let authMethod = self.store.snapshot(for: self.provider)?.loginMethod(for: .kiro),
+               !authMethod.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                ProviderDetailInfoRow(label: L("Auth"), value: authMethod, labelWidth: self.labelWidth)
             }
 
             if let planRow = ProviderDetailView<EmptyView>.planRow(
@@ -316,15 +353,15 @@ private struct ProviderDetailInfoGrid: View {
 
     private var updatedText: String {
         if let updated = self.store.snapshot(for: self.provider)?.updatedAt {
-            return AppUsageFormatter.updatedString(from: updated)
+            return UsageFormatter.updatedString(from: updated)
         }
         if self.store.refreshingProviders.contains(self.provider) {
-            return L10n.string("Refreshing")
+            return L("Refreshing")
         }
         if self.store.unavailableMessage(for: self.provider) != nil {
-            return L10n.string("Unavailable")
+            return L("Unavailable")
         }
-        return L10n.string("Not fetched yet")
+        return L("Not fetched yet")
     }
 }
 
@@ -357,7 +394,7 @@ struct ProviderMetricsInlineView: View {
         let hasProviderCost = self.model.providerCost != nil
         let hasTokenUsage = self.model.tokenUsage != nil
         ProviderSettingsSection(
-            title: L10n.string("Usage"),
+            title: L("Usage"),
             spacing: 8,
             verticalPadding: 6,
             horizontalPadding: 0)
@@ -384,7 +421,7 @@ struct ProviderMetricsInlineView: View {
 
                 if let credits = self.model.creditsText {
                     ProviderMetricInlineTextRow(
-                        title: L10n.string("Credits"),
+                        title: L("Credits"),
                         value: credits,
                         labelWidth: self.labelWidth)
                 }
@@ -398,7 +435,7 @@ struct ProviderMetricsInlineView: View {
 
                 if let tokenUsage = self.model.tokenUsage {
                     ProviderMetricInlineTextRow(
-                        title: L10n.string("Cost"),
+                        title: L("Cost"),
                         value: tokenUsage.sessionLine,
                         labelWidth: self.labelWidth)
                     ProviderMetricInlineTextRow(
@@ -412,9 +449,9 @@ struct ProviderMetricsInlineView: View {
 
     private var placeholderText: String {
         if !self.isEnabled {
-            return L10n.string("Disabled — no recent data")
+            return L("Disabled — no recent data")
         }
-        return self.model.placeholder ?? L10n.string("No usage yet")
+        return self.model.placeholder.map(L) ?? L("No usage yet")
     }
 }
 
@@ -432,49 +469,57 @@ private struct ProviderMetricInlineRow: View {
                 .frame(width: self.labelWidth, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 4) {
-                UsageProgressBar(
-                    percent: self.metric.percent,
-                    tint: self.progressColor,
-                    accessibilityLabel: self.metric.percentStyle.accessibilityLabel,
-                    pacePercent: self.metric.pacePercent,
-                    paceOnTop: self.metric.paceOnTop)
-                    .frame(minWidth: ProviderSettingsMetrics.metricBarWidth, maxWidth: .infinity)
-
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(self.metric.percentLabel)
+                switch ProviderDetailView<EmptyView>.metricInlinePresentation(self.metric) {
+                case let .status(statusText):
+                    Text(statusText)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Spacer(minLength: 8)
-                    if let resetText = self.metric.resetText, !resetText.isEmpty {
-                        Text(resetText)
+                case .progress:
+                    UsageProgressBar(
+                        percent: self.metric.percent,
+                        tint: self.progressColor,
+                        accessibilityLabel: self.metric.percentStyle.accessibilityLabel,
+                        pacePercent: self.metric.pacePercent,
+                        paceOnTop: self.metric.paceOnTop,
+                        warningMarkerPercents: self.metric.warningMarkerPercents)
+                        .frame(minWidth: ProviderSettingsMetrics.metricBarWidth, maxWidth: .infinity)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(self.metric.percentLabel)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                    }
-                }
-
-                let hasLeftDetail = self.metric.detailLeftText?.isEmpty == false
-                let hasRightDetail = self.metric.detailRightText?.isEmpty == false
-                if hasLeftDetail || hasRightDetail {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let leftDetail = self.metric.detailLeftText, !leftDetail.isEmpty {
-                            Text(leftDetail)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                            .monospacedDigit()
                         Spacer(minLength: 8)
-                        if let rightDetail = self.metric.detailRightText, !rightDetail.isEmpty {
-                            Text(rightDetail)
+                        if let resetText = self.metric.resetText, !resetText.isEmpty {
+                            Text(resetText)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                }
 
-                if let detail = self.detailText, !detail.isEmpty {
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
+                    let hasLeftDetail = self.metric.detailLeftText?.isEmpty == false
+                    let hasRightDetail = self.metric.detailRightText?.isEmpty == false
+                    if hasLeftDetail || hasRightDetail {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if let leftDetail = self.metric.detailLeftText, !leftDetail.isEmpty {
+                                Text(leftDetail)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            if let rightDetail = self.metric.detailRightText, !rightDetail.isEmpty {
+                                Text(rightDetail)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if let detail = self.detailText, !detail.isEmpty {
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -547,17 +592,21 @@ private struct ProviderMetricInlineCostRow: View {
                 .frame(width: self.labelWidth, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 4) {
-                UsageProgressBar(
-                    percent: self.section.percentUsed,
-                    tint: self.progressColor,
-                    accessibilityLabel: L10n.string("Usage used"))
-                    .frame(minWidth: ProviderSettingsMetrics.metricBarWidth, maxWidth: .infinity)
+                if let percentUsed = self.section.percentUsed {
+                    UsageProgressBar(
+                        percent: percentUsed,
+                        tint: self.progressColor,
+                        accessibilityLabel: L("Usage used"))
+                        .frame(minWidth: ProviderSettingsMetrics.metricBarWidth, maxWidth: .infinity)
+                }
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(String(format: "%.0f%% used", self.section.percentUsed))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    if let percentLine = self.section.percentLine {
+                        Text(percentLine)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                     Spacer(minLength: 8)
                     Text(self.section.spendLine)
                         .font(.footnote)

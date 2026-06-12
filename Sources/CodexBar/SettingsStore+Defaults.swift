@@ -13,22 +13,6 @@ extension SettingsStore {
         }
     }
 
-    var menuOpenRefreshEnabled: Bool {
-        get { self.defaultsState.menuOpenRefreshEnabled }
-        set {
-            self.defaultsState.menuOpenRefreshEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "menuOpenRefreshEnabled")
-        }
-    }
-
-    var appLanguage: AppLanguage {
-        get { AppLanguage(rawValue: self.defaultsState.appLanguageRaw ?? "") ?? .system }
-        set {
-            self.defaultsState.appLanguageRaw = newValue.rawValue
-            self.userDefaults.set(newValue.rawValue, forKey: AppLanguage.userDefaultsKey)
-        }
-    }
-
     var launchAtLogin: Bool {
         get { self.defaultsState.launchAtLogin }
         set {
@@ -111,22 +95,6 @@ extension SettingsStore {
         }
     }
 
-    var loginNotificationsEnabled: Bool {
-        get { self.defaultsState.loginNotificationsEnabled }
-        set {
-            self.defaultsState.loginNotificationsEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "loginNotificationsEnabled")
-        }
-    }
-
-    var augmentSessionExpiredNotificationsEnabled: Bool {
-        get { self.defaultsState.augmentSessionExpiredNotificationsEnabled }
-        set {
-            self.defaultsState.augmentSessionExpiredNotificationsEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "augmentSessionExpiredNotificationsEnabled")
-        }
-    }
-
     var sessionQuotaNotificationsEnabled: Bool {
         get { self.defaultsState.sessionQuotaNotificationsEnabled }
         set {
@@ -135,47 +103,93 @@ extension SettingsStore {
         }
     }
 
-    var sessionQuotaThresholdNotificationsEnabled: Bool {
-        get { self.defaultsState.sessionQuotaThresholdNotificationsEnabled }
+    var quotaWarningNotificationsEnabled: Bool {
+        get { self.defaultsState.quotaWarningNotificationsEnabled }
         set {
-            self.defaultsState.sessionQuotaThresholdNotificationsEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "sessionQuotaThresholdNotificationsEnabled")
+            self.defaultsState.quotaWarningNotificationsEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "quotaWarningNotificationsEnabled")
         }
     }
 
-    var sessionQuotaUsageThresholds: [Int] {
-        get { self.defaultsState.sessionQuotaUsageThresholdsRaw }
+    var quotaWarningThresholds: [Int] {
+        get { QuotaWarningThresholds.sanitized(self.defaultsState.quotaWarningThresholdsRaw) }
         set {
-            let normalized = SessionQuotaNotificationLogic.normalizedUsageThresholds(newValue)
-            let resolved = normalized.isEmpty ? SessionQuotaNotificationLogic.defaultUsageThresholds : normalized
-            self.defaultsState.sessionQuotaUsageThresholdsRaw = resolved
-            self.userDefaults.set(resolved, forKey: "sessionQuotaUsageThresholds")
+            let sanitized = QuotaWarningThresholds.sanitized(newValue)
+            self.defaultsState.quotaWarningThresholdsRaw = sanitized
+            self.defaultsState.quotaWarningSessionThresholdsRaw = sanitized
+            self.defaultsState.quotaWarningWeeklyThresholdsRaw = sanitized
+            self.userDefaults.set(sanitized, forKey: "quotaWarningThresholds")
+            self.userDefaults.set(sanitized, forKey: "quotaWarningSessionThresholds")
+            self.userDefaults.set(sanitized, forKey: "quotaWarningWeeklyThresholds")
         }
     }
 
-    var weeklyLimitThresholdNotificationsEnabled: Bool {
-        get { self.defaultsState.weeklyLimitThresholdNotificationsEnabled }
-        set {
-            self.defaultsState.weeklyLimitThresholdNotificationsEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "weeklyLimitThresholdNotificationsEnabled")
+    func quotaWarningThresholds(_ window: QuotaWarningWindow) -> [Int] {
+        switch window {
+        case .session:
+            QuotaWarningThresholds.sanitized(self.defaultsState.quotaWarningSessionThresholdsRaw)
+        case .weekly:
+            QuotaWarningThresholds.sanitized(self.defaultsState.quotaWarningWeeklyThresholdsRaw)
         }
     }
 
-    var weeklyLimitRecoveryNotificationsEnabled: Bool {
-        get { self.defaultsState.weeklyLimitRecoveryNotificationsEnabled }
-        set {
-            self.defaultsState.weeklyLimitRecoveryNotificationsEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "weeklyLimitRecoveryNotificationsEnabled")
+    func setQuotaWarningThresholds(_ window: QuotaWarningWindow, thresholds: [Int]) {
+        let sanitized = QuotaWarningThresholds.sanitized(thresholds)
+        switch window {
+        case .session:
+            self.defaultsState.quotaWarningSessionThresholdsRaw = sanitized
+            self.userDefaults.set(sanitized, forKey: "quotaWarningSessionThresholds")
+        case .weekly:
+            self.defaultsState.quotaWarningWeeklyThresholdsRaw = sanitized
+            self.userDefaults.set(sanitized, forKey: "quotaWarningWeeklyThresholds")
         }
     }
 
-    var weeklyLimitUsageThresholds: [Int] {
-        get { self.defaultsState.weeklyLimitUsageThresholdsRaw }
+    func quotaWarningWindowEnabled(_ window: QuotaWarningWindow) -> Bool {
+        switch window {
+        case .session:
+            self.defaultsState.quotaWarningSessionEnabled
+        case .weekly:
+            self.defaultsState.quotaWarningWeeklyEnabled
+        }
+    }
+
+    func setQuotaWarningWindowEnabled(_ window: QuotaWarningWindow, enabled: Bool) {
+        switch window {
+        case .session:
+            self.defaultsState.quotaWarningSessionEnabled = enabled
+            self.userDefaults.set(enabled, forKey: "quotaWarningSessionEnabled")
+        case .weekly:
+            self.defaultsState.quotaWarningWeeklyEnabled = enabled
+            self.userDefaults.set(enabled, forKey: "quotaWarningWeeklyEnabled")
+        }
+    }
+
+    var quotaWarningSoundEnabled: Bool {
+        get { self.defaultsState.quotaWarningSoundEnabled }
         set {
-            let normalized = SessionQuotaNotificationLogic.normalizedUsageThresholds(newValue)
-            let resolved = normalized.isEmpty ? SessionQuotaNotificationLogic.defaultUsageThresholds : normalized
-            self.defaultsState.weeklyLimitUsageThresholdsRaw = resolved
-            self.userDefaults.set(resolved, forKey: "weeklyLimitUsageThresholds")
+            self.defaultsState.quotaWarningSoundEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "quotaWarningSoundEnabled")
+        }
+    }
+
+    var quotaWarningMarkersVisible: Bool {
+        get { self.defaultsState.quotaWarningMarkersVisible }
+        set {
+            self.defaultsState.quotaWarningMarkersVisible = newValue
+            self.userDefaults.set(newValue, forKey: "quotaWarningMarkersVisible")
+        }
+    }
+
+    var weeklyProgressWorkDays: Int? {
+        get { self.defaultsState.weeklyProgressWorkDays }
+        set {
+            self.defaultsState.weeklyProgressWorkDays = newValue
+            if let newValue {
+                self.userDefaults.set(newValue, forKey: "weeklyProgressWorkDays")
+            } else {
+                self.userDefaults.removeObject(forKey: "weeklyProgressWorkDays")
+            }
         }
     }
 
@@ -188,35 +202,18 @@ extension SettingsStore {
     }
 
     var resetTimesShowAbsolute: Bool {
-        get { self.resetTimeDisplayStyle == .absolute }
+        get { self.defaultsState.resetTimesShowAbsolute }
         set {
             self.defaultsState.resetTimesShowAbsolute = newValue
             self.userDefaults.set(newValue, forKey: "resetTimesShowAbsolute")
-            self.resetTimeDisplayStyleRaw = newValue
-                ? ResetTimeDisplayStyle.absolute.rawValue
-                : ResetTimeDisplayStyle.countdown.rawValue
         }
     }
 
-    private var resetTimeDisplayStyleRaw: String? {
-        get { self.defaultsState.resetTimeDisplayStyleRaw }
+    var providerChangelogLinksEnabled: Bool {
+        get { self.defaultsState.providerChangelogLinksEnabled }
         set {
-            self.defaultsState.resetTimeDisplayStyleRaw = newValue
-            if let raw = newValue {
-                self.userDefaults.set(raw, forKey: "resetTimeDisplayStyle")
-            } else {
-                self.userDefaults.removeObject(forKey: "resetTimeDisplayStyle")
-            }
-        }
-    }
-
-    var resetTimeDisplayStyle: ResetTimeDisplayStyle {
-        get { ResetTimeDisplayStyle(rawValue: self.resetTimeDisplayStyleRaw ?? "") ?? .countdown }
-        set {
-            self.resetTimeDisplayStyleRaw = newValue.rawValue
-            let legacyAbsolute = newValue == .absolute
-            self.defaultsState.resetTimesShowAbsolute = legacyAbsolute
-            self.userDefaults.set(legacyAbsolute, forKey: "resetTimesShowAbsolute")
+            self.defaultsState.providerChangelogLinksEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "providerChangelogLinksEnabled")
         }
     }
 
@@ -226,23 +223,6 @@ extension SettingsStore {
             self.defaultsState.menuBarShowsBrandIconWithPercent = newValue
             self.userDefaults.set(newValue, forKey: "menuBarShowsBrandIconWithPercent")
         }
-    }
-
-    private var menuBarUsageDisplayStyleRaw: String? {
-        get { self.defaultsState.menuBarUsageDisplayStyleRaw }
-        set {
-            self.defaultsState.menuBarUsageDisplayStyleRaw = newValue
-            if let raw = newValue {
-                self.userDefaults.set(raw, forKey: "menuBarUsageDisplayStyle")
-            } else {
-                self.userDefaults.removeObject(forKey: "menuBarUsageDisplayStyle")
-            }
-        }
-    }
-
-    var menuBarUsageDisplayStyle: MenuBarUsageDisplayStyle {
-        get { MenuBarUsageDisplayStyle(rawValue: self.menuBarUsageDisplayStyleRaw ?? "") ?? .iconPercent }
-        set { self.menuBarUsageDisplayStyleRaw = newValue.rawValue }
     }
 
     private var menuBarDisplayModeRaw: String? {
@@ -262,47 +242,34 @@ extension SettingsStore {
         set { self.menuBarDisplayModeRaw = newValue.rawValue }
     }
 
-    private var menuBarCompactHiddenProvidersRaw: [String] {
-        get { self.defaultsState.menuBarCompactHiddenProvidersRaw }
+    private var kiroMenuBarDisplayModeRaw: String? {
+        get { self.defaultsState.kiroMenuBarDisplayModeRaw }
         set {
-            self.defaultsState.menuBarCompactHiddenProvidersRaw = newValue
-            self.userDefaults.set(newValue, forKey: "menuBarCompactHiddenProviders")
+            self.defaultsState.kiroMenuBarDisplayModeRaw = newValue
+            if let raw = newValue {
+                self.userDefaults.set(raw, forKey: "kiroMenuBarDisplayMode")
+            } else {
+                self.userDefaults.removeObject(forKey: "kiroMenuBarDisplayMode")
+            }
         }
     }
 
-    var menuBarCompactHiddenProviders: [UsageProvider] {
-        get { Self.decodeProviders(self.menuBarCompactHiddenProvidersRaw) }
+    var kiroMenuBarDisplayMode: KiroMenuBarDisplayMode {
+        get { KiroMenuBarDisplayMode(rawValue: self.kiroMenuBarDisplayModeRaw ?? "") ?? .automatic }
+        set { self.kiroMenuBarDisplayModeRaw = newValue.rawValue }
+    }
+
+    var multiAccountMenuLayout: MultiAccountMenuLayout {
+        get { MultiAccountMenuLayout(rawValue: self.defaultsState.multiAccountMenuLayoutRaw) ?? .segmented }
         set {
-            let normalized = Self.normalizeProviders(newValue)
-            self.menuBarCompactHiddenProvidersRaw = normalized.map(\.rawValue)
+            self.defaultsState.multiAccountMenuLayoutRaw = newValue.rawValue
+            self.userDefaults.set(newValue.rawValue, forKey: "multiAccountMenuLayout")
         }
-    }
-
-    func isProviderShownInCompactBars(_ provider: UsageProvider) -> Bool {
-        !Set(self.menuBarCompactHiddenProviders).contains(provider)
-    }
-
-    func setProviderShownInCompactBars(_ provider: UsageProvider, isShown: Bool) {
-        var hidden = Set(self.menuBarCompactHiddenProviders)
-        if isShown {
-            hidden.remove(provider)
-        } else {
-            hidden.insert(provider)
-        }
-        self.menuBarCompactHiddenProviders = UsageProvider.allCases.filter { hidden.contains($0) }
-    }
-
-    func compactBarProviders(activeProviders: [UsageProvider]) -> [UsageProvider] {
-        let hidden = Set(self.menuBarCompactHiddenProviders)
-        return Self.normalizeProviders(activeProviders).filter { !hidden.contains($0) }
     }
 
     var showAllTokenAccountsInMenu: Bool {
-        get { self.defaultsState.showAllTokenAccountsInMenu }
-        set {
-            self.defaultsState.showAllTokenAccountsInMenu = newValue
-            self.userDefaults.set(newValue, forKey: "showAllTokenAccountsInMenu")
-        }
+        get { self.multiAccountMenuLayout == .stacked }
+        set { self.multiAccountMenuLayout = newValue ? .stacked : .segmented }
     }
 
     var historicalTrackingEnabled: Bool {
@@ -326,6 +293,15 @@ extension SettingsStore {
         set {
             self.defaultsState.costUsageEnabled = newValue
             self.userDefaults.set(newValue, forKey: "tokenCostUsageEnabled")
+        }
+    }
+
+    var costUsageHistoryDays: Int {
+        get { self.defaultsState.costUsageHistoryDays }
+        set {
+            let clamped = max(1, min(365, newValue))
+            self.defaultsState.costUsageHistoryDays = clamped
+            self.userDefaults.set(clamped, forKey: "tokenCostUsageHistoryDays")
         }
     }
 
@@ -410,14 +386,6 @@ extension SettingsStore {
         }
     }
 
-    var claudePeakHoursEnabled: Bool {
-        get { self.defaultsState.claudePeakHoursEnabled }
-        set {
-            self.defaultsState.claudePeakHoursEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "claudePeakHoursEnabled")
-        }
-    }
-
     var showOptionalCreditsAndExtraUsage: Bool {
         get { self.defaultsState.showOptionalCreditsAndExtraUsage }
         set {
@@ -484,9 +452,9 @@ extension SettingsStore {
     }
 
     var mergedMenuLastSelectedWasOverview: Bool {
-        get { self.defaultsState.mergedMenuLastSelectedWasOverview }
+        get { self.mergedMenuLastSelectedWasOverviewStorage }
         set {
-            self.defaultsState.mergedMenuLastSelectedWasOverview = newValue
+            self.mergedMenuLastSelectedWasOverviewStorage = newValue
             self.userDefaults.set(newValue, forKey: "mergedMenuLastSelectedWasOverview")
         }
     }
@@ -500,9 +468,9 @@ extension SettingsStore {
     }
 
     private var selectedMenuProviderRaw: String? {
-        get { self.defaultsState.selectedMenuProviderRaw }
+        get { self.selectedMenuProviderRawStorage }
         set {
-            self.defaultsState.selectedMenuProviderRaw = newValue
+            self.selectedMenuProviderRawStorage = newValue
             if let raw = newValue {
                 self.userDefaults.set(raw, forKey: "selectedMenuProvider")
             } else {
@@ -669,9 +637,38 @@ extension SettingsStore {
         }
     }
 
+    var appLanguage: String {
+        get { self.defaultsState.appLanguageRaw ?? "" }
+        set {
+            let stored = newValue.isEmpty ? nil : newValue
+            self.defaultsState.appLanguageRaw = stored
+            if let stored {
+                self.userDefaults.set(stored, forKey: "appLanguage")
+                if self.userDefaults !== UserDefaults.standard {
+                    UserDefaults.standard.set(stored, forKey: "appLanguage")
+                }
+                UserDefaults.standard.set([stored], forKey: "AppleLanguages")
+            } else {
+                self.userDefaults.removeObject(forKey: "appLanguage")
+                if self.userDefaults !== UserDefaults.standard {
+                    UserDefaults.standard.removeObject(forKey: "appLanguage")
+                }
+                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+            }
+        }
+    }
+
     var debugLoadingPattern: LoadingPattern? {
         get { self.debugLoadingPatternRaw.flatMap(LoadingPattern.init(rawValue:)) }
         set { self.debugLoadingPatternRaw = newValue?.rawValue }
+    }
+
+    var terminalApp: TerminalApp {
+        get { TerminalApp(rawValue: self.defaultsState.terminalAppRaw ?? "") ?? .terminal }
+        set {
+            self.defaultsState.terminalAppRaw = newValue.rawValue
+            self.userDefaults.set(newValue.rawValue, forKey: "terminalApp")
+        }
     }
 }
 

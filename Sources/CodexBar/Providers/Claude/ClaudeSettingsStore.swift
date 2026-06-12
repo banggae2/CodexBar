@@ -10,11 +10,10 @@ extension SettingsStore {
         set {
             let source: ProviderSourceMode? = switch newValue {
             case .auto: .auto
-            case .cli: .cli
-            case .claudeDashboardPlugin: .claudeDashboardPlugin
-            case .log: .log
+            case .api: .api
             case .oauth: .oauth
-            case .web: .auto
+            case .web: .web
+            case .cli: .cli
             }
             self.updateProviderConfig(provider: .claude) { entry in
                 entry.source = source
@@ -47,6 +46,16 @@ extension SettingsStore {
     }
 
     func ensureClaudeCookieLoaded() {}
+
+    var claudeAdminAPIKey: String {
+        get { self.configSnapshot.providerConfig(for: .claude)?.sanitizedAPIKey ?? "" }
+        set {
+            self.updateProviderConfig(provider: .claude) { entry in
+                entry.apiKey = self.normalizedConfigValue(newValue)
+            }
+            self.logSecretUpdate(provider: .claude, field: "apiKey", value: newValue)
+        }
+    }
 }
 
 extension SettingsStore {
@@ -60,24 +69,19 @@ extension SettingsStore {
             cookieSource: self.claudeSnapshotCookieSource(tokenOverride: tokenOverride, routing: routing),
             manualCookieHeader: self.claudeSnapshotCookieHeader(
                 routing: routing,
-                hasSelectedAccount: account != nil))
+                hasSelectedAccount: account != nil),
+            organizationID: account?.sanitizedOrganizationID)
     }
 
     private static func claudeUsageDataSource(from source: ProviderSourceMode?) -> ClaudeUsageDataSource {
         guard let source else { return .auto }
         switch source {
-        case .auto:
-            return .auto
-        case .api:
-            return .oauth
+        case .auto, .api:
+            return source == .api ? .api : .auto
         case .web:
-            return .auto
+            return .web
         case .cli:
             return .cli
-        case .claudeDashboardPlugin:
-            return .claudeDashboardPlugin
-        case .log:
-            return .log
         case .oauth:
             return .oauth
         }
@@ -91,6 +95,8 @@ extension SettingsStore {
         case .none:
             hasSelectedAccount ? "" : self.claudeCookieHeader
         case .oauth:
+            ""
+        case .adminAPIKey:
             ""
         case let .webCookie(header):
             header
@@ -108,6 +114,9 @@ extension SettingsStore {
             return fallback
         }
         if routing.isOAuth {
+            return .off
+        }
+        if routing.adminAPIKey != nil {
             return .off
         }
         if self.tokenAccounts(for: .claude).isEmpty { return fallback }

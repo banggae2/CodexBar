@@ -1,6 +1,7 @@
 import Testing
 @testable import CodexBar
 
+@Suite(.serialized)
 struct SessionQuotaNotificationLogicTests {
     @Test
     func `does nothing without previous value`() {
@@ -34,79 +35,30 @@ struct SessionQuotaNotificationLogicTests {
     }
 
     @Test
-    func `detects only highest crossed usage threshold per refresh`() {
-        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
-            previousUsed: 79,
-            currentUsed: 91,
-            thresholds: [80, 90],
-            alreadySent: [])
+    func `depleted notification copy follows Traditional Chinese app language`() {
+        Self.withAppLanguage("zh-Hant") {
+            let copy = SessionQuotaNotificationLogic.notificationCopy(
+                transition: .depleted,
+                providerName: "Codex")
 
-        #expect(crossed == [90])
+            #expect(copy.title == "Codex 工作階段已用完")
+            #expect(copy.body == "剩餘 0%。恢復可用時會再通知。")
+        }
     }
 
     @Test
-    func `does not fire usage thresholds without previous sample`() {
-        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
-            previousUsed: nil,
-            currentUsed: 91,
-            thresholds: [80, 90],
-            alreadySent: [])
+    func `restored notification copy follows Traditional Chinese app language`() {
+        Self.withAppLanguage("zh-Hant") {
+            let copy = SessionQuotaNotificationLogic.notificationCopy(
+                transition: .restored,
+                providerName: "Codex")
 
-        #expect(crossed.isEmpty)
+            #expect(copy.title == "Codex 工作階段已恢復")
+            #expect(copy.body == "工作階段配額已恢復可用。")
+        }
     }
 
-    @Test
-    func `does not repeat already sent usage thresholds when choosing highest crossed`() {
-        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
-            previousUsed: 79,
-            currentUsed: 91,
-            thresholds: [80, 90],
-            alreadySent: [80])
-
-        #expect(crossed == [90])
-    }
-
-    @Test
-    func `detects unsent usage threshold after previous sample lands exactly on threshold`() {
-        let crossed = SessionQuotaNotificationLogic.crossedUsageThresholds(
-            previousUsed: 50,
-            currentUsed: 51,
-            thresholds: [50],
-            alreadySent: [])
-
-        #expect(crossed == [50])
-    }
-
-    @Test
-    func `normalizes usage thresholds`() {
-        #expect(SessionQuotaNotificationLogic.normalizedUsageThresholds([90, 80, 80, 0, 120]) == [80, 90])
-    }
-
-    @Test
-    func `default threshold presets include quarter steps`() {
-        #expect(SessionQuotaNotificationLogic.defaultUsageThresholds == [25, 50, 75, 100])
-    }
-
-    @Test
-    func `threshold editor remains editable when threshold alerts are off`() {
-        let state = NotificationThresholdEditorState(thresholdNotificationsEnabled: false)
-        #expect(state.canEditThresholds)
-    }
-
-    @Test
-    func `threshold display mode uses stored usage values when showing used`() {
-        let mode = NotificationThresholdDisplayMode(usageBarsShowUsed: true)
-
-        #expect(mode.displayPercent(forStoredUsageThreshold: 80) == 80)
-        #expect(mode.storedUsageThreshold(forDisplayPercent: 80) == 80)
-    }
-
-    @Test
-    func `threshold display mode inverts stored usage values when showing remaining`() {
-        let mode = NotificationThresholdDisplayMode(usageBarsShowUsed: false)
-
-        #expect(mode.displayPercent(forStoredUsageThreshold: 80) == 20)
-        #expect(mode.storedUsageThreshold(forDisplayPercent: 20) == 80)
-        #expect(mode.storedUsageThreshold(forDisplayPercent: 0) == 100)
+    private static func withAppLanguage(_ language: String, perform body: () -> Void) {
+        CodexBarLocalizationOverride.$appLanguage.withValue(language, operation: body)
     }
 }

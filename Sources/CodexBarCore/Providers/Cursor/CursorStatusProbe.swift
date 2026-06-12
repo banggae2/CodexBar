@@ -356,6 +356,8 @@ public struct CursorStatusSnapshot: Sendable {
     public let teamOnDemandUsedUSD: Double?
     /// Team on-demand limit in USD
     public let teamOnDemandLimitUSD: Double?
+    /// Billing cycle start date
+    public let billingCycleStart: Date?
     /// Billing cycle reset date
     public let billingCycleEnd: Date?
     /// Membership type (e.g., "enterprise", "pro", "hobby")
@@ -389,6 +391,7 @@ public struct CursorStatusSnapshot: Sendable {
         onDemandLimitUSD: Double?,
         teamOnDemandUsedUSD: Double?,
         teamOnDemandLimitUSD: Double?,
+        billingCycleStart: Date? = nil,
         billingCycleEnd: Date?,
         membershipType: String?,
         accountEmail: String?,
@@ -406,6 +409,7 @@ public struct CursorStatusSnapshot: Sendable {
         self.onDemandLimitUSD = onDemandLimitUSD
         self.teamOnDemandUsedUSD = teamOnDemandUsedUSD
         self.teamOnDemandLimitUSD = teamOnDemandLimitUSD
+        self.billingCycleStart = billingCycleStart
         self.billingCycleEnd = billingCycleEnd
         self.membershipType = membershipType
         self.accountEmail = accountEmail
@@ -417,37 +421,44 @@ public struct CursorStatusSnapshot: Sendable {
 
     /// Convert to UsageSnapshot for the common provider interface
     public func toUsageSnapshot() -> UsageSnapshot {
-        // Primary: For legacy request-based plans, use request usage; otherwise use plan percentage
-        let primaryUsedPercent: Double = if self.isLegacyRequestPlan,
-                                            let used = self.requestsUsed,
-                                            let limit = self.requestsLimit,
-                                            limit > 0
+        let cursorRequests: CursorRequestUsage? = if let used = self.requestsUsed,
+                                                     let limit = self.requestsLimit,
+                                                     limit > 0
         {
-            (Double(used) / Double(limit)) * 100
+            CursorRequestUsage(used: used, limit: limit)
         } else {
-            self.planPercentUsed
+            nil
         }
+
+        // Primary: For usable legacy request quotas, use request usage; otherwise preserve plan percentage.
+        let primaryUsedPercent = cursorRequests?.usedPercent ?? self.planPercentUsed
+
+        let billingCycleWindowMinutes = Self.billingCycleWindowMinutes(
+            start: self.billingCycleStart,
+            end: self.billingCycleEnd)
 
         let primary = RateWindow(
             usedPercent: primaryUsedPercent,
-            windowMinutes: nil,
+            windowMinutes: billingCycleWindowMinutes,
             resetsAt: self.billingCycleEnd,
             resetDescription: self.billingCycleEnd.map { Self.formatResetDate($0) })
 
-        // Secondary: Auto + Composer usage (shown as its own bar below Total)
-        let secondary: RateWindow? = self.autoPercentUsed.map { pct in
+        // Secondary: Auto + Composer usage (shown as its own bar below Total).
+        // Legacy request-based plans don't have the token-based Auto/API breakdown — those percentages
+        // come from the new usage-based pricing and are meaningless next to a request quota, so hide them.
+        let secondary: RateWindow? = cursorRequests != nil ? nil : self.autoPercentUsed.map { pct in
             RateWindow(
                 usedPercent: pct,
-                windowMinutes: nil,
+                windowMinutes: billingCycleWindowMinutes,
                 resetsAt: self.billingCycleEnd,
                 resetDescription: self.billingCycleEnd.map { Self.formatResetDate($0) })
         }
 
-        // Tertiary: API (named model) usage
-        let tertiary: RateWindow? = self.apiPercentUsed.map { pct in
+        // Tertiary: API (named model) usage — hidden for legacy request-based plans (see above).
+        let tertiary: RateWindow? = cursorRequests != nil ? nil : self.apiPercentUsed.map { pct in
             RateWindow(
                 usedPercent: pct,
-                windowMinutes: nil,
+                windowMinutes: billingCycleWindowMinutes,
                 resetsAt: self.billingCycleEnd,
                 resetDescription: self.billingCycleEnd.map { Self.formatResetDate($0) })
         }
@@ -467,15 +478,6 @@ public struct CursorStatusSnapshot: Sendable {
                 period: "Monthly",
                 resetsAt: self.billingCycleEnd,
                 updatedAt: Date())
-        } else {
-            nil
-        }
-
-        // Legacy plan request usage (when maxRequestUsage is set)
-        let cursorRequests: CursorRequestUsage? = if let used = self.requestsUsed,
-                                                     let limit = self.requestsLimit
-        {
-            CursorRequestUsage(used: used, limit: limit)
         } else {
             nil
         }
@@ -502,6 +504,14 @@ public struct CursorStatusSnapshot: Sendable {
         return "Resets " + formatter.string(from: date)
     }
 
+    private static func billingCycleWindowMinutes(start: Date?, end: Date?) -> Int? {
+        guard let start,
+              let end
+        else { return nil }
+        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        return minutes > 0 ? minutes : nil
+    }
+
     private static func formatMembershipType(_ type: String) -> String {
         switch type.lowercased() {
         case "enterprise":
@@ -526,6 +536,9 @@ public enum CursorStatusProbeError: LocalizedError, Sendable {
     case parseFailed(String)
     case noSessionCookie
 
+    static let safariFullDiskAccessHint =
+        "If you use Safari, grant CodexBar Full Disk Access in System Settings ▸ Privacy & Security."
+
     public var errorDescription: String? {
         switch self {
         case .notLoggedIn:
@@ -535,8 +548,8 @@ public enum CursorStatusProbeError: LocalizedError, Sendable {
         case let .parseFailed(msg):
             "Could not parse Cursor usage: \(msg)"
         case .noSessionCookie:
-            "No Cursor session found. Please log in to cursor.com in \(cursorCookieImportOrder.loginHint). "
-                + "If you use Safari, grant CodexBar Full Disk Access in System Settings ▸ Privacy & Security. "
+            "No Cursor session found. \(Self.safariFullDiskAccessHint) "
+                + "Please log in to cursor.com in \(cursorCookieImportOrder.loginHint). "
                 + "You can also sign in to Cursor from the CodexBar menu (Add / switch account)."
         }
     }
@@ -670,13 +683,13 @@ public struct CursorStatusProbe: Sendable {
     public let baseURL: URL
     public var timeout: TimeInterval = 15.0
     private let browserDetection: BrowserDetection
-    private let urlSession: URLSession
+    private let urlSession: any ProviderHTTPTransport
 
     public init(
         baseURL: URL = URL(string: "https://cursor.com")!,
         timeout: TimeInterval = 15.0,
         browserDetection: BrowserDetection,
-        urlSession: URLSession = .shared)
+        urlSession: any ProviderHTTPTransport = ProviderHTTPClient.shared)
     {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -690,7 +703,10 @@ public struct CursorStatusProbe: Sendable {
     }
 
     /// Fetch Cursor usage using browser cookies with fallback to stored session.
-    public func fetch(cookieHeaderOverride: String? = nil, logger: ((String) -> Void)? = nil)
+    public func fetch(
+        cookieHeaderOverride: String? = nil,
+        allowCachedSessions: Bool = true,
+        logger: ((String) -> Void)? = nil)
         async throws -> CursorStatusSnapshot
     {
         let log: (String) -> Void = { msg in logger?("[cursor] \(msg)") }
@@ -701,7 +717,8 @@ public struct CursorStatusProbe: Sendable {
             return try await self.fetchWithCookieHeader(override)
         }
 
-        if let cached = CookieHeaderCache.load(provider: .cursor),
+        if allowCachedSessions,
+           let cached = CookieHeaderCache.load(provider: .cursor),
            !cached.cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
             log("Using cached cookie header from \(cached.sourceLabel)")
@@ -758,24 +775,26 @@ public struct CursorStatusProbe: Sendable {
         }
 
         // Fall back to stored session cookies (from "Add Account" login flow)
-        let storedCookies = await CursorSessionStore.shared.getCookies()
-        if !storedCookies.isEmpty {
-            log("Using stored session cookies")
-            let cookieHeader = storedCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-            do {
-                return try await self.fetchWithCookieHeader(cookieHeader)
-            } catch let error as CursorStatusProbeError {
-                if case .notLoggedIn = error {
-                    // Clear only when auth is invalid; keep for transient failures.
-                    await CursorSessionStore.shared.clearCookies()
-                    log("Stored session invalid, cleared")
-                } else {
+        if allowCachedSessions {
+            let storedCookies = await CursorSessionStore.shared.getCookies()
+            if !storedCookies.isEmpty {
+                log("Using stored session cookies")
+                let cookieHeader = storedCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                do {
+                    return try await self.fetchWithCookieHeader(cookieHeader)
+                } catch let error as CursorStatusProbeError {
+                    if case .notLoggedIn = error {
+                        // Clear only when auth is invalid; keep for transient failures.
+                        await CursorSessionStore.shared.clearCookies()
+                        log("Stored session invalid, cleared")
+                    } else {
+                        log("Stored session failed: \(error.localizedDescription)")
+                        firstRecoverableError = firstRecoverableError ?? error
+                    }
+                } catch {
                     log("Stored session failed: \(error.localizedDescription)")
-                    firstRecoverableError = firstRecoverableError ?? error
+                    firstRecoverableError = firstRecoverableError ?? .networkError(error.localizedDescription)
                 }
-            } catch {
-                log("Stored session failed: \(error.localizedDescription)")
-                firstRecoverableError = firstRecoverableError ?? .networkError(error.localizedDescription)
             }
         }
 
@@ -1012,12 +1031,14 @@ public struct CursorStatusProbe: Sendable {
         rawJSON: String?,
         requestUsage: CursorUsageResponse? = nil) -> CursorStatusSnapshot
     {
-        // Parse billing cycle end date
-        let billingCycleEnd: Date? = summary.billingCycleEnd.flatMap { dateString in
+        func parseBillingCycleDate(_ dateString: String?) -> Date? {
+            guard let dateString else { return nil }
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             return formatter.date(from: dateString) ?? ISO8601DateFormatter().date(from: dateString)
         }
+        let billingCycleStart = parseBillingCycleDate(summary.billingCycleStart)
+        let billingCycleEnd = parseBillingCycleDate(summary.billingCycleEnd)
 
         // Convert cents to USD (plan percent derives from raw values to avoid percent unit mismatches).
         // Use plan.limit directly - breakdown.total represents total *used* credits, not the limit.
@@ -1113,6 +1134,7 @@ public struct CursorStatusProbe: Sendable {
             onDemandLimitUSD: onDemandLimit,
             teamOnDemandUsedUSD: teamOnDemandUsed,
             teamOnDemandLimitUSD: teamOnDemandLimit,
+            billingCycleStart: billingCycleStart,
             billingCycleEnd: billingCycleEnd,
             membershipType: summary.membershipType,
             accountEmail: userInfo?.email,
@@ -1154,7 +1176,7 @@ public struct CursorStatusProbe: Sendable {
         baseURL: URL = URL(string: "https://cursor.com")!,
         timeout: TimeInterval = 15.0,
         browserDetection: BrowserDetection,
-        urlSession: URLSession = .shared)
+        urlSession: any ProviderHTTPTransport = ProviderHTTPClient.shared)
     {
         _ = baseURL
         _ = timeout
@@ -1169,6 +1191,7 @@ public struct CursorStatusProbe: Sendable {
 
     public func fetch(
         cookieHeaderOverride _: String? = nil,
+        allowCachedSessions _: Bool = true,
         logger: ((String) -> Void)? = nil) async throws -> CursorStatusSnapshot
     {
         try await self.fetch(logger: logger)

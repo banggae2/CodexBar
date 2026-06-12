@@ -3,6 +3,7 @@ import Foundation
 public struct CodexReconciledState: Sendable {
     public let session: RateWindow?
     public let weekly: RateWindow?
+    /// Named model-specific limits (e.g. Codex Spark) surfaced through `UsageSnapshot.extraRateWindows`.
     public let extraRateWindows: [NamedRateWindow]
     public let identity: ProviderIdentitySnapshot?
     public let updatedAt: Date
@@ -24,16 +25,10 @@ public struct CodexReconciledState: Sendable {
     public static func fromCLI(
         primary: RateWindow?,
         secondary: RateWindow?,
-        extraRateWindows: [NamedRateWindow] = [],
         identity: ProviderIdentitySnapshot?,
         updatedAt: Date = Date()) -> CodexReconciledState?
     {
-        self.make(
-            primary: primary,
-            secondary: secondary,
-            extraRateWindows: extraRateWindows,
-            identity: identity,
-            updatedAt: updatedAt)
+        self.make(primary: primary, secondary: secondary, identity: identity, updatedAt: updatedAt)
     }
 
     public static func fromOAuth(
@@ -44,7 +39,9 @@ public struct CodexReconciledState: Sendable {
         self.make(
             primary: self.makeWindow(response.rateLimit?.primaryWindow),
             secondary: self.makeWindow(response.rateLimit?.secondaryWindow),
-            extraRateWindows: self.extraRateWindows(from: response),
+            extraRateWindows: CodexAdditionalRateLimitMapper.extraRateWindows(
+                from: response.additionalRateLimits,
+                now: updatedAt),
             identity: self.oauthIdentity(response: response, credentials: credentials),
             updatedAt: updatedAt)
     }
@@ -66,7 +63,7 @@ public struct CodexReconciledState: Sendable {
         return self.make(
             primary: snapshot.primaryLimit,
             secondary: snapshot.secondaryLimit,
-            extraRateWindows: snapshot.extraRateWindows,
+            extraRateWindows: snapshot.extraRateWindows ?? [],
             identity: identity,
             updatedAt: snapshot.updatedAt)
     }
@@ -95,12 +92,14 @@ public struct CodexReconciledState: Sendable {
     private static func make(
         primary: RateWindow?,
         secondary: RateWindow?,
-        extraRateWindows: [NamedRateWindow],
+        extraRateWindows: [NamedRateWindow] = [],
         identity: ProviderIdentitySnapshot?,
         updatedAt: Date) -> CodexReconciledState?
     {
         let normalized = CodexRateWindowNormalizer.normalize(primary: primary, secondary: secondary)
-        guard normalized.primary != nil || normalized.secondary != nil || !extraRateWindows.isEmpty else {
+        // Extra windows are supplemental, so they never resurrect a snapshot on their own: keep the
+        // existing primary/weekly gate to preserve current behavior when only extra limits are present.
+        guard normalized.primary != nil || normalized.secondary != nil else {
             return nil
         }
 
@@ -110,56 +109,6 @@ public struct CodexReconciledState: Sendable {
             extraRateWindows: extraRateWindows,
             identity: identity,
             updatedAt: updatedAt)
-    }
-
-    static func extraRateWindows(from response: CodexUsageResponse) -> [NamedRateWindow] {
-        var buckets: [(key: String, value: CodexUsageResponse.NamedRateLimitDetails)] = []
-        if let keyedBuckets = response.rateLimitsByLimitId {
-            buckets.append(contentsOf: keyedBuckets.keys.sorted().compactMap { key in
-                keyedBuckets[key].map { (key, $0) }
-            })
-        }
-        if let additionalBuckets = response.additionalRateLimits {
-            buckets.append(contentsOf: additionalBuckets.enumerated().map { idx, bucket in
-                let key = bucket.limitId?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ?? bucket.limitName?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ?? "additional-\(idx)"
-                return (key, bucket)
-            })
-        }
-        guard !buckets.isEmpty else { return [] }
-
-        var seenIDs = Set<String>()
-        return buckets.flatMap { key, bucket -> [NamedRateWindow] in
-            guard key != "codex",
-                  let limitName = UsageFetcher.normalizedCodexAccountField(bucket.limitName)
-            else {
-                return []
-            }
-            let idPrefix = Self.extraRateWindowIDPrefix(key: key, limitName: limitName)
-            guard seenIDs.insert(idPrefix).inserted else { return [] }
-
-            let normalized = CodexRateWindowNormalizer.normalize(
-                primary: self.makeWindow(bucket.primaryWindow ?? bucket.limitSnapshot),
-                secondary: self.makeWindow(bucket.secondaryWindow))
-            return [
-                normalized.primary.map { window in
-                    NamedRateWindow(id: "\(idPrefix)-5h", title: "\(limitName) 5h", window: window)
-                },
-                normalized.secondary.map { window in
-                    NamedRateWindow(id: "\(idPrefix)-weekly", title: "\(limitName) weekly", window: window)
-                },
-            ].compactMap(\.self)
-        }
-    }
-
-    private static func extraRateWindowIDPrefix(key: String, limitName: String) -> String {
-        let raw = key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? limitName : key
-        let slug = raw
-            .lowercased()
-            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return slug.isEmpty ? "codex-extra-limit" : slug
     }
 
     private static func makeWindow(_ window: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {

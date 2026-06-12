@@ -11,18 +11,16 @@ struct ClaudeSourcePlannerTests {
             webExtrasEnabled: false,
             hasWebSession: true,
             hasCLI: true,
-            hasDashboardPluginCache: true,
             hasOAuthCredentials: true))
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .claudeDashboardPlugin, .log, .oauth])
+        #expect(plan.orderedSteps.map(\.dataSource) == [.oauth, .cli, .web])
         #expect(plan.orderedSteps.map(\.inclusionReason) == [
-            .appAutoPreferredCLI,
-            .autoFallbackDashboardPlugin,
-            .autoFallbackLocalLog,
-            .autoFallbackOAuthAPI,
+            .appAutoPreferredOAuth,
+            .appAutoFallbackCLI,
+            .appAutoFallbackWeb,
         ])
-        #expect(plan.availableSteps.map(\.dataSource) == [.cli, .claudeDashboardPlugin, .log, .oauth])
-        #expect(plan.preferredStep?.dataSource == .cli)
+        #expect(plan.availableSteps.map(\.dataSource) == [.oauth, .cli, .web])
+        #expect(plan.preferredStep?.dataSource == .oauth)
     }
 
     @Test
@@ -33,17 +31,14 @@ struct ClaudeSourcePlannerTests {
             webExtrasEnabled: false,
             hasWebSession: true,
             hasCLI: true,
-            hasDashboardPluginCache: true,
             hasOAuthCredentials: false))
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .claudeDashboardPlugin, .log, .oauth])
+        #expect(plan.orderedSteps.map(\.dataSource) == [.web, .cli])
         #expect(plan.orderedSteps.map(\.inclusionReason) == [
-            .cliAutoPreferredCLI,
-            .autoFallbackDashboardPlugin,
-            .autoFallbackLocalLog,
-            .autoFallbackOAuthAPI,
+            .cliAutoPreferredWeb,
+            .cliAutoFallbackCLI,
         ])
-        #expect(plan.preferredStep?.dataSource == .cli)
+        #expect(plan.preferredStep?.dataSource == .web)
     }
 
     @Test
@@ -54,30 +49,12 @@ struct ClaudeSourcePlannerTests {
             webExtrasEnabled: true,
             hasWebSession: false,
             hasCLI: true,
-            hasDashboardPluginCache: false,
             hasOAuthCredentials: false))
 
         #expect(plan.orderedSteps.count == 1)
         #expect(plan.orderedSteps.first?.dataSource == .cli)
         #expect(plan.orderedSteps.first?.inclusionReason == .explicitSourceSelection)
         #expect(plan.compatibilityStrategy == ClaudeUsageStrategy(dataSource: .cli, useWebExtras: true))
-    }
-
-    @Test
-    func `explicit local log mode plan is single step`() {
-        let plan = ClaudeSourcePlanner.resolve(input: ClaudeSourcePlanningInput(
-            runtime: .app,
-            selectedDataSource: .log,
-            webExtrasEnabled: true,
-            hasWebSession: false,
-            hasCLI: true,
-            hasDashboardPluginCache: false,
-            hasOAuthCredentials: false))
-
-        #expect(plan.orderedSteps.count == 1)
-        #expect(plan.orderedSteps.first?.dataSource == .log)
-        #expect(plan.orderedSteps.first?.inclusionReason == .explicitSourceSelection)
-        #expect(plan.compatibilityStrategy == ClaudeUsageStrategy(dataSource: .log, useWebExtras: false))
     }
 
     @Test
@@ -88,7 +65,6 @@ struct ClaudeSourcePlannerTests {
             webExtrasEnabled: true,
             hasWebSession: false,
             hasCLI: true,
-            hasDashboardPluginCache: false,
             hasOAuthCredentials: false))
 
         #expect(plan.preferredStep?.dataSource == .cli)
@@ -96,30 +72,28 @@ struct ClaudeSourcePlannerTests {
     }
 
     @Test
-    func `auto falls back to local logs when CLI is unavailable`() {
+    func `no source planner output is deterministic`() {
         let input = ClaudeSourcePlanningInput(
             runtime: .app,
             selectedDataSource: .auto,
             webExtrasEnabled: false,
             hasWebSession: false,
             hasCLI: false,
-            hasDashboardPluginCache: true,
             hasOAuthCredentials: false)
         let plan = ClaudeSourcePlanner.resolve(input: input)
 
-        #expect(plan.orderedSteps.map(\.dataSource) == [.cli, .claudeDashboardPlugin, .log, .oauth])
-        #expect(plan.availableSteps.map(\.dataSource) == [.claudeDashboardPlugin, .log])
-        #expect(!plan.isNoSourceAvailable)
-        #expect(plan.preferredStep?.dataSource == .claudeDashboardPlugin)
-        #expect(plan.executionSteps.map(\.dataSource) == [.claudeDashboardPlugin, .log])
+        #expect(plan.orderedSteps.map(\.dataSource) == [.oauth, .cli, .web])
+        #expect(plan.availableSteps.isEmpty)
+        #expect(plan.isNoSourceAvailable)
+        #expect(plan.preferredStep == nil)
+        #expect(plan.executionSteps.isEmpty)
         #expect(plan.debugLines() == [
-            "planner_order=cli→claude-dashboard-plugin→log→oauth",
-            "planner_selected=claude-dashboard-plugin",
-            "planner_no_source=false",
-            "planner_step.cli=unavailable reason=app-auto-preferred-cli",
-            "planner_step.claude-dashboard-plugin=available reason=auto-fallback-dashboard-plugin",
-            "planner_step.log=available reason=auto-fallback-local-log",
-            "planner_step.oauth=unavailable reason=auto-fallback-oauth-api",
+            "planner_order=oauth→cli→web",
+            "planner_selected=none",
+            "planner_no_source=true",
+            "planner_step.oauth=unavailable reason=app-auto-preferred-oauth",
+            "planner_step.cli=unavailable reason=app-auto-fallback-cli",
+            "planner_step.web=unavailable reason=app-auto-fallback-web",
         ])
     }
 

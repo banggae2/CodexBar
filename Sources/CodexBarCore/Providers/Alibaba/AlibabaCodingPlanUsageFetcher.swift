@@ -22,11 +22,15 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         apiKey: String,
         region: AlibabaCodingPlanAPIRegion = .international,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        now: Date = Date()) async throws -> AlibabaCodingPlanUsageSnapshot
+        now: Date = Date(),
+        transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> AlibabaCodingPlanUsageSnapshot
     {
         let cleanedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedKey.isEmpty else {
             throw AlibabaCodingPlanUsageError.invalidCredentials
+        }
+        if let rejectedKey = AlibabaCodingPlanSettingsReader.rejectedEndpointOverrideKey(environment: environment) {
+            throw ProviderEndpointOverrideError.alibabaCodingPlan(rejectedKey)
         }
 
         if region != .international {
@@ -34,7 +38,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 apiKey: cleanedKey,
                 region: region,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         }
 
         do {
@@ -42,7 +47,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 apiKey: cleanedKey,
                 region: .international,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         } catch let error as AlibabaCodingPlanUsageError {
             guard error.shouldRetryOnAlternateRegion else { throw error }
             Self.log.debug("Alibaba Coding Plan request failed on intl host; retrying cn host")
@@ -50,7 +56,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 apiKey: cleanedKey,
                 region: .chinaMainland,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         }
     }
 
@@ -58,10 +65,14 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         cookieHeader: String,
         region: AlibabaCodingPlanAPIRegion = .international,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        now: Date = Date()) async throws -> AlibabaCodingPlanUsageSnapshot
+        now: Date = Date(),
+        transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> AlibabaCodingPlanUsageSnapshot
     {
         guard let normalizedCookie = CookieHeaderNormalizer.normalize(cookieHeader) else {
             throw AlibabaCodingPlanSettingsError.invalidCookie
+        }
+        if let rejectedKey = AlibabaCodingPlanSettingsReader.rejectedEndpointOverrideKey(environment: environment) {
+            throw ProviderEndpointOverrideError.alibabaCodingPlan(rejectedKey)
         }
 
         if region != .international {
@@ -69,7 +80,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 cookieHeader: normalizedCookie,
                 region: region,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         }
 
         do {
@@ -77,7 +89,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 cookieHeader: normalizedCookie,
                 region: .international,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         } catch let error as AlibabaCodingPlanUsageError {
             guard error.shouldRetryOnAlternateRegion else { throw error }
             Self.log.debug("Alibaba Coding Plan cookie request failed on intl host; retrying cn host")
@@ -85,7 +98,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
                 cookieHeader: normalizedCookie,
                 region: .chinaMainland,
                 environment: environment,
-                now: now)
+                now: now,
+                transport: transport)
         }
     }
 
@@ -93,7 +107,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         apiKey: String,
         region: AlibabaCodingPlanAPIRegion,
         environment: [String: String],
-        now: Date) async throws -> AlibabaCodingPlanUsageSnapshot
+        now: Date,
+        transport: any ProviderHTTPTransport) async throws -> AlibabaCodingPlanUsageSnapshot
     {
         let url = self.resolveQuotaURL(region: region, environment: environment)
         var request = URLRequest(url: url)
@@ -108,18 +123,15 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         request.setValue(region.gatewayBaseURLString, forHTTPHeaderField: "Origin")
         request.setValue(region.dashboardURL.absoluteString, forHTTPHeaderField: "Referer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AlibabaCodingPlanUsageError.networkError("Invalid response")
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+        let response = try await transport.response(for: request)
+        let data = response.data
+        guard response.statusCode == 200 else {
+            if response.statusCode == 401 || response.statusCode == 403 {
                 throw AlibabaCodingPlanUsageError.invalidCredentials
             }
             let body = String(data: data, encoding: .utf8) ?? ""
-            Self.log.error("Alibaba Coding Plan returned \(httpResponse.statusCode): \(body)")
-            throw AlibabaCodingPlanUsageError.apiError("HTTP \(httpResponse.statusCode)")
+            Self.log.error("Alibaba Coding Plan returned \(response.statusCode): \(body)")
+            throw AlibabaCodingPlanUsageError.apiError("HTTP \(response.statusCode)")
         }
 
         return try self.parseUsageSnapshot(from: data, now: now, authMode: .apiKey)
@@ -129,13 +141,15 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         cookieHeader: String,
         region: AlibabaCodingPlanAPIRegion,
         environment: [String: String],
-        now: Date) async throws -> AlibabaCodingPlanUsageSnapshot
+        now: Date,
+        transport: any ProviderHTTPTransport) async throws -> AlibabaCodingPlanUsageSnapshot
     {
         let url = self.resolveConsoleQuotaURL(region: region, environment: environment)
         let secToken = try await self.resolveConsoleSECToken(
             cookieHeader: cookieHeader,
             region: region,
-            environment: environment)
+            environment: environment,
+            transport: transport)
         let anonymousID = self.extractCookieValue(name: "cna", from: cookieHeader)
 
         var request = URLRequest(url: url)
@@ -158,18 +172,15 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         request.setValue(region.gatewayBaseURLString, forHTTPHeaderField: "Origin")
         request.setValue(region.consoleRefererURL.absoluteString, forHTTPHeaderField: "Referer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AlibabaCodingPlanUsageError.networkError("Invalid response")
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+        let response = try await transport.response(for: request)
+        let data = response.data
+        guard response.statusCode == 200 else {
+            if response.statusCode == 401 || response.statusCode == 403 {
                 throw AlibabaCodingPlanUsageError.loginRequired
             }
             let body = String(data: data, encoding: .utf8) ?? ""
-            Self.log.error("Alibaba Coding Plan returned \(httpResponse.statusCode): \(body)")
-            throw AlibabaCodingPlanUsageError.apiError("HTTP \(httpResponse.statusCode)")
+            Self.log.error("Alibaba Coding Plan returned \(response.statusCode): \(body)")
+            throw AlibabaCodingPlanUsageError.apiError("HTTP \(response.statusCode)")
         }
 
         return try self.parseUsageSnapshot(from: data, now: now, authMode: .webSession)
@@ -276,12 +287,11 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func url(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
-            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
-            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
-        else {
-            return nil
-        }
+        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
+        guard let cleaned else { return nil }
+
+        let base = ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: cleaned)
+        guard let base else { return nil }
 
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.path = "/data/api.json"
@@ -297,12 +307,11 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func consoleURL(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
-            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
-            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
-        else {
-            return nil
-        }
+        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
+        guard let cleaned else { return nil }
+
+        let base = ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: cleaned)
+        guard let base else { return nil }
 
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.path = "/data/api.json"
@@ -318,7 +327,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     private static func resolveConsoleSECToken(
         cookieHeader: String,
         region: AlibabaCodingPlanAPIRegion,
-        environment: [String: String]) async throws -> String
+        environment: [String: String],
+        transport: any ProviderHTTPTransport) async throws -> String
     {
         let cookieSECToken = self.extractCookieValue(name: "sec_token", from: cookieHeader)
 
@@ -332,10 +342,9 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             forHTTPHeaderField: "Accept")
 
-        if let (data, response) = try? await URLSession.shared.data(for: request),
-           let httpResponse = response as? HTTPURLResponse,
-           httpResponse.statusCode == 200,
-           let html = String(data: data, encoding: .utf8),
+        if let response = try? await transport.response(for: request),
+           response.statusCode == 200,
+           let html = String(data: response.data, encoding: .utf8),
            let token = self.extractConsoleSECToken(from: html),
            !token.isEmpty
         {
@@ -345,7 +354,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
         if let token = try? await self.fetchSECTokenFromUserInfo(
             cookieHeader: cookieHeader,
             region: region,
-            environment: environment)
+            environment: environment,
+            transport: transport)
         {
             return token
         }
@@ -358,12 +368,11 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     static func dashboardURL(from rawHost: String, region: AlibabaCodingPlanAPIRegion) -> URL? {
-        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
-            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
-            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
-        else {
-            return nil
-        }
+        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
+        guard let cleaned else { return nil }
+
+        let base = ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: cleaned)
+        guard let base else { return nil }
 
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
               let dashboardComponents = URLComponents(
@@ -382,7 +391,8 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     private static func fetchSECTokenFromUserInfo(
         cookieHeader: String,
         region: AlibabaCodingPlanAPIRegion,
-        environment: [String: String]) async throws -> String?
+        environment: [String: String],
+        transport: any ProviderHTTPTransport) async throws -> String?
     {
         let gatewayBaseURL = self.resolveConsoleGatewayBaseURL(region: region, environment: environment)
         let userInfoURL = gatewayBaseURL.appendingPathComponent("tool/user/info.json")
@@ -395,12 +405,12 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
             .absoluteString + "/"
         request.setValue(referer, forHTTPHeaderField: "Referer")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        let response = try await transport.response(for: request)
+        guard response.statusCode == 200 else {
             return nil
         }
 
-        let object = try JSONSerialization.jsonObject(with: data, options: [])
+        let object = try JSONSerialization.jsonObject(with: response.data, options: [])
         let expanded = self.expandedJSON(object)
         return self.findFirstString(forKeys: ["secToken", "sec_token"], in: expanded)
     }
@@ -418,12 +428,11 @@ public struct AlibabaCodingPlanUsageFetcher: Sendable {
     }
 
     private static func baseURL(from rawHost: String) -> URL? {
-        guard let base = ProviderEndpointSafety.trustedHTTPSURL(
-            AlibabaCodingPlanSettingsReader.cleaned(rawHost),
-            allowedHostSuffixes: ["alibabacloud.com", "aliyun.com"])
-        else {
-            return nil
-        }
+        let cleaned = AlibabaCodingPlanSettingsReader.cleaned(rawHost)
+        guard let cleaned else { return nil }
+
+        let base = ProviderEndpointOverrideValidator.normalizedHTTPSURL(from: cleaned)
+        guard let base else { return nil }
 
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             return nil
@@ -1096,9 +1105,9 @@ public enum AlibabaCodingPlanUsageError: LocalizedError, Sendable, Equatable {
         case .invalidCredentials:
             "Alibaba Coding Plan API credentials are invalid or expired."
         case .apiKeyUnavailableInRegion:
-            "Alibaba Coding Plan API key mode is not available for this account/region. " +
-                "Use cookie authentication in Settings -> Providers -> Alibaba, or switch regions " +
-                "if your account supports API key mode elsewhere."
+            "Alibaba Coding Plan quota is not available through Coding Plan API keys for this account/region. " +
+                "Use cookie authentication in Settings -> Providers -> Alibaba if the Alibaba console exposes a " +
+                "compatible session, or switch regions if quota API access is available there."
         case let .networkError(message):
             "Alibaba Coding Plan network error: \(message)"
         case let .apiError(message):

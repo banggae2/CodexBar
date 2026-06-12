@@ -12,6 +12,7 @@ public struct TokenAccountSupport: Sendable {
     public let injection: TokenAccountInjection
     public let requiresManualCookieSource: Bool
     public let cookieName: String?
+    public let environmentKeysToScrub: [String]
 
     public init(
         title: String,
@@ -19,7 +20,8 @@ public struct TokenAccountSupport: Sendable {
         placeholder: String,
         injection: TokenAccountInjection,
         requiresManualCookieSource: Bool,
-        cookieName: String?)
+        cookieName: String?,
+        environmentKeysToScrub: [String] = [])
     {
         self.title = title
         self.subtitle = subtitle
@@ -27,6 +29,7 @@ public struct TokenAccountSupport: Sendable {
         self.injection = injection
         self.requiresManualCookieSource = requiresManualCookieSource
         self.cookieName = cookieName
+        self.environmentKeysToScrub = environmentKeysToScrub
     }
 }
 
@@ -41,7 +44,40 @@ public enum TokenAccountSupportCatalog {
         case let .environment(key):
             return [key: token]
         case .cookieHeader:
+            if provider == .claude,
+               case let route = ClaudeCredentialRouting.resolve(tokenAccountToken: token, manualCookieHeader: nil)
+            {
+                switch route {
+                case let .oauth(accessToken):
+                    return [ClaudeOAuthCredentialsStore.environmentTokenKey: accessToken]
+                case let .adminAPIKey(apiKey):
+                    return [ClaudeAdminAPISettingsReader.adminAPIKeyEnvironmentKey: apiKey]
+                case .none, .webCookie:
+                    break
+                }
+            }
             return nil
+        }
+    }
+
+    public static func scrubEnvironmentForSelectedAccount(
+        _ environment: inout [String: String],
+        provider: UsageProvider,
+        token _: String)
+    {
+        guard let support = self.support(for: provider) else { return }
+        switch support.injection {
+        case let .environment(key):
+            environment.removeValue(forKey: key)
+            for key in support.environmentKeysToScrub {
+                environment.removeValue(forKey: key)
+            }
+        case .cookieHeader:
+            guard provider == .claude else { return }
+            environment.removeValue(forKey: ClaudeOAuthCredentialsStore.environmentTokenKey)
+            for key in ClaudeAdminAPISettingsReader.apiKeyEnvironmentKeys {
+                environment.removeValue(forKey: key)
+            }
         }
     }
 
@@ -53,8 +89,7 @@ public enum TokenAccountSupportCatalog {
     }
 
     public static func isClaudeOAuthToken(_ token: String) -> Bool {
-        _ = token
-        return false
+        ClaudeCredentialRouting.resolve(tokenAccountToken: token, manualCookieHeader: nil).isOAuth
     }
 
     public static func normalizedCookieHeader(_ token: String, support: TokenAccountSupport) -> String {

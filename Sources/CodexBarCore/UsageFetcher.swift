@@ -30,9 +30,14 @@ public struct RateWindow: Codable, Equatable, Sendable {
     public func backfillingResetTime(from cached: RateWindow?, now: Date = .init()) -> RateWindow {
         if self.resetsAt != nil { return self }
         guard let cachedReset = cached?.resetsAt, cachedReset > now else { return self }
+        let windowMinutes = if let windowMinutes = self.windowMinutes, windowMinutes > 0 {
+            windowMinutes
+        } else {
+            cached?.windowMinutes
+        }
         return RateWindow(
             usedPercent: self.usedPercent,
-            windowMinutes: self.windowMinutes ?? cached?.windowMinutes,
+            windowMinutes: windowMinutes,
             resetsAt: cachedReset,
             resetDescription: self.resetDescription ?? cached?.resetDescription,
             nextRegenPercent: self.nextRegenPercent)
@@ -43,11 +48,44 @@ public struct NamedRateWindow: Codable, Equatable, Sendable {
     public let id: String
     public let title: String
     public let window: RateWindow
+    /// Whether `window.usedPercent` reflects known quota usage.
+    ///
+    /// Some providers expose reset metadata for a named quota window before
+    /// they expose remaining usage. Keep those windows visible for reset/debug
+    /// context, but mark them so clients do not render `usedPercent` as a real
+    /// exhausted quota. Missing values decode as `true` for older cached payloads.
+    public let usageKnown: Bool
 
-    public init(id: String, title: String, window: RateWindow) {
+    public init(id: String, title: String, window: RateWindow, usageKnown: Bool = true) {
         self.id = id
         self.title = title
         self.window = window
+        self.usageKnown = usageKnown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case window
+        case usageKnown
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.window = try container.decode(RateWindow.self, forKey: .window)
+        self.usageKnown = try container.decodeIfPresent(Bool.self, forKey: .usageKnown) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.title, forKey: .title)
+        try container.encode(self.window, forKey: .window)
+        if !self.usageKnown {
+            try container.encode(false, forKey: .usageKnown)
+        }
     }
 }
 
@@ -85,10 +123,18 @@ public struct UsageSnapshot: Codable, Sendable {
     public let tertiary: RateWindow?
     public let extraRateWindows: [NamedRateWindow]?
     public let providerCost: ProviderCostSnapshot?
+    public let kiroUsage: KiroUsageDetails?
     public let zaiUsage: ZaiUsageSnapshot?
     public let minimaxUsage: MiniMaxUsageSnapshot?
+    public let deepseekUsage: DeepSeekUsageSummary?
     public let openRouterUsage: OpenRouterUsageSnapshot?
+    public let openAIAPIUsage: OpenAIAPIUsageSnapshot?
+    public let claudeAdminAPIUsage: ClaudeAdminAPIUsageSnapshot?
+    public let mistralUsage: MistralUsageSnapshot?
+    public let deepgramUsage: DeepgramUsageSnapshot?
     public let cursorRequests: CursorRequestUsage?
+    public let subscriptionExpiresAt: Date?
+    public let subscriptionRenewsAt: Date?
     public let updatedAt: Date
     public let identity: ProviderIdentitySnapshot?
 
@@ -98,7 +144,14 @@ public struct UsageSnapshot: Codable, Sendable {
         case tertiary
         case extraRateWindows
         case providerCost
+        case kiroUsage
         case openRouterUsage
+        case openAIAPIUsage
+        case claudeAdminAPIUsage
+        case mistralUsage
+        case deepgramUsage
+        case subscriptionExpiresAt
+        case subscriptionRenewsAt
         case updatedAt
         case identity
         case accountEmail
@@ -111,11 +164,19 @@ public struct UsageSnapshot: Codable, Sendable {
         secondary: RateWindow?,
         tertiary: RateWindow? = nil,
         extraRateWindows: [NamedRateWindow]? = nil,
+        kiroUsage: KiroUsageDetails? = nil,
         providerCost: ProviderCostSnapshot? = nil,
         zaiUsage: ZaiUsageSnapshot? = nil,
         minimaxUsage: MiniMaxUsageSnapshot? = nil,
+        deepseekUsage: DeepSeekUsageSummary? = nil,
         openRouterUsage: OpenRouterUsageSnapshot? = nil,
+        openAIAPIUsage: OpenAIAPIUsageSnapshot? = nil,
+        claudeAdminAPIUsage: ClaudeAdminAPIUsageSnapshot? = nil,
+        mistralUsage: MistralUsageSnapshot? = nil,
+        deepgramUsage: DeepgramUsageSnapshot? = nil,
         cursorRequests: CursorRequestUsage? = nil,
+        subscriptionExpiresAt: Date? = nil,
+        subscriptionRenewsAt: Date? = nil,
         updatedAt: Date,
         identity: ProviderIdentitySnapshot? = nil)
     {
@@ -123,11 +184,19 @@ public struct UsageSnapshot: Codable, Sendable {
         self.secondary = secondary
         self.tertiary = tertiary
         self.extraRateWindows = extraRateWindows
+        self.kiroUsage = kiroUsage
         self.providerCost = providerCost
         self.zaiUsage = zaiUsage
         self.minimaxUsage = minimaxUsage
+        self.deepseekUsage = deepseekUsage
         self.openRouterUsage = openRouterUsage
+        self.openAIAPIUsage = openAIAPIUsage
+        self.claudeAdminAPIUsage = claudeAdminAPIUsage
+        self.mistralUsage = mistralUsage
+        self.deepgramUsage = deepgramUsage
         self.cursorRequests = cursorRequests
+        self.subscriptionExpiresAt = subscriptionExpiresAt
+        self.subscriptionRenewsAt = subscriptionRenewsAt
         self.updatedAt = updatedAt
         self.identity = identity
     }
@@ -139,10 +208,20 @@ public struct UsageSnapshot: Codable, Sendable {
         self.tertiary = try container.decodeIfPresent(RateWindow.self, forKey: .tertiary)
         self.extraRateWindows = try container.decodeIfPresent([NamedRateWindow].self, forKey: .extraRateWindows)
         self.providerCost = try container.decodeIfPresent(ProviderCostSnapshot.self, forKey: .providerCost)
+        self.kiroUsage = try container.decodeIfPresent(KiroUsageDetails.self, forKey: .kiroUsage)
         self.zaiUsage = nil // Not persisted, fetched fresh each time
         self.minimaxUsage = nil // Not persisted, fetched fresh each time
+        self.deepseekUsage = nil // Not persisted, fetched fresh each time
         self.openRouterUsage = try container.decodeIfPresent(OpenRouterUsageSnapshot.self, forKey: .openRouterUsage)
+        self.openAIAPIUsage = try container.decodeIfPresent(OpenAIAPIUsageSnapshot.self, forKey: .openAIAPIUsage)
+        self.claudeAdminAPIUsage = try container.decodeIfPresent(
+            ClaudeAdminAPIUsageSnapshot.self,
+            forKey: .claudeAdminAPIUsage)
+        self.mistralUsage = try container.decodeIfPresent(MistralUsageSnapshot.self, forKey: .mistralUsage)
+        self.deepgramUsage = try container.decodeIfPresent(DeepgramUsageSnapshot.self, forKey: .deepgramUsage)
         self.cursorRequests = nil // Not persisted, fetched fresh each time
+        self.subscriptionExpiresAt = try container.decodeIfPresent(Date.self, forKey: .subscriptionExpiresAt)
+        self.subscriptionRenewsAt = try container.decodeIfPresent(Date.self, forKey: .subscriptionRenewsAt)
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         if let identity = try container.decodeIfPresent(ProviderIdentitySnapshot.self, forKey: .identity) {
             self.identity = identity
@@ -170,7 +249,14 @@ public struct UsageSnapshot: Codable, Sendable {
         try container.encode(self.tertiary, forKey: .tertiary)
         try container.encodeIfPresent(self.extraRateWindows, forKey: .extraRateWindows)
         try container.encodeIfPresent(self.providerCost, forKey: .providerCost)
+        try container.encodeIfPresent(self.kiroUsage, forKey: .kiroUsage)
         try container.encodeIfPresent(self.openRouterUsage, forKey: .openRouterUsage)
+        try container.encodeIfPresent(self.openAIAPIUsage, forKey: .openAIAPIUsage)
+        try container.encodeIfPresent(self.claudeAdminAPIUsage, forKey: .claudeAdminAPIUsage)
+        try container.encodeIfPresent(self.mistralUsage, forKey: .mistralUsage)
+        try container.encodeIfPresent(self.deepgramUsage, forKey: .deepgramUsage)
+        try container.encodeIfPresent(self.subscriptionExpiresAt, forKey: .subscriptionExpiresAt)
+        try container.encodeIfPresent(self.subscriptionRenewsAt, forKey: .subscriptionRenewsAt)
         try container.encode(self.updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(self.identity, forKey: .identity)
         try container.encodeIfPresent(self.identity?.accountEmail, forKey: .accountEmail)
@@ -247,6 +333,15 @@ public struct UsageSnapshot: Codable, Sendable {
         self.identity(for: provider)?.loginMethod
     }
 
+    public var hasRateLimitWindows: Bool {
+        self.primary != nil || self.secondary != nil || self.tertiary != nil ||
+            !(self.extraRateWindows?.isEmpty ?? true)
+    }
+
+    public func rateLimitsUnavailable(for provider: UsageProvider) -> Bool {
+        UsageLimitsAvailability.resolve(provider: provider, snapshot: self).isUnavailable
+    }
+
     /// Keep this initializer-style copy in sync with UsageSnapshot fields so relabeling/scoping never drops data.
     public func withIdentity(_ identity: ProviderIdentitySnapshot?) -> UsageSnapshot {
         UsageSnapshot(
@@ -254,11 +349,19 @@ public struct UsageSnapshot: Codable, Sendable {
             secondary: self.secondary,
             tertiary: self.tertiary,
             extraRateWindows: self.extraRateWindows,
+            kiroUsage: self.kiroUsage,
             providerCost: self.providerCost,
             zaiUsage: self.zaiUsage,
             minimaxUsage: self.minimaxUsage,
+            deepseekUsage: self.deepseekUsage,
             openRouterUsage: self.openRouterUsage,
+            openAIAPIUsage: self.openAIAPIUsage,
+            claudeAdminAPIUsage: self.claudeAdminAPIUsage,
+            mistralUsage: self.mistralUsage,
+            deepgramUsage: self.deepgramUsage,
             cursorRequests: self.cursorRequests,
+            subscriptionExpiresAt: self.subscriptionExpiresAt,
+            subscriptionRenewsAt: self.subscriptionRenewsAt,
             updatedAt: self.updatedAt,
             identity: identity)
     }
@@ -284,11 +387,19 @@ public struct UsageSnapshot: Codable, Sendable {
             secondary: secondary,
             tertiary: tertiary,
             extraRateWindows: self.extraRateWindows,
+            kiroUsage: self.kiroUsage,
             providerCost: self.providerCost,
             zaiUsage: self.zaiUsage,
             minimaxUsage: self.minimaxUsage,
+            deepseekUsage: self.deepseekUsage,
             openRouterUsage: self.openRouterUsage,
+            openAIAPIUsage: self.openAIAPIUsage,
+            claudeAdminAPIUsage: self.claudeAdminAPIUsage,
+            mistralUsage: self.mistralUsage,
+            deepgramUsage: self.deepgramUsage,
             cursorRequests: self.cursorRequests,
+            subscriptionExpiresAt: self.subscriptionExpiresAt,
+            subscriptionRenewsAt: self.subscriptionRenewsAt,
             updatedAt: self.updatedAt,
             identity: self.identity)
     }
@@ -315,6 +426,11 @@ public struct UsageSnapshot: Codable, Sendable {
 public struct AccountInfo: Equatable, Sendable {
     public let email: String?
     public let plan: String?
+
+    public var hasIdentity: Bool {
+        self.email?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ||
+            self.plan?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
 
     public init(email: String?, plan: String?) {
         self.email = email
@@ -346,6 +462,40 @@ public enum UsageError: LocalizedError, Sendable {
         case .decodeFailed:
             "Could not parse Codex session log."
         }
+    }
+
+    public static func isNoRateLimitsFoundDescription(_ text: String?) -> Bool {
+        text?.trimmingCharacters(in: .whitespacesAndNewlines) == UsageError.noRateLimitsFound.errorDescription
+    }
+}
+
+public enum UsageLimitsAvailability: Equatable, Sendable {
+    case available
+    case unavailable
+
+    public var isUnavailable: Bool {
+        self == .unavailable
+    }
+
+    public static func resolve(
+        provider: UsageProvider,
+        snapshot: UsageSnapshot?,
+        account: AccountInfo? = nil,
+        lastErrorDescription: String? = nil) -> Self
+    {
+        guard provider == .codex else { return .available }
+
+        if let snapshot {
+            guard snapshot.identity(for: provider) != nil else { return .available }
+            return snapshot.hasRateLimitWindows ? .available : .unavailable
+        }
+
+        guard UsageError.isNoRateLimitsFoundDescription(lastErrorDescription),
+              account?.hasIdentity == true
+        else {
+            return .available
+        }
+        return .unavailable
     }
 }
 
@@ -387,15 +537,13 @@ private enum RPCAccountDetails: Decodable {
 
 private struct RPCRateLimitsResponse: Decodable, Encodable {
     let rateLimits: RPCRateLimitSnapshot
-    let rateLimitsByLimitId: [String: RPCRateLimitSnapshot]?
 }
 
 private struct RPCRateLimitSnapshot: Decodable, Encodable {
-    let limitId: String?
-    let limitName: String?
     let primary: RPCRateLimitWindow?
     let secondary: RPCRateLimitWindow?
     let credits: RPCCreditsSnapshot?
+    let planType: String?
 }
 
 private struct RPCRateLimitWindow: Decodable, Encodable {
@@ -444,6 +592,13 @@ enum RPCWireError: Error, LocalizedError {
     }
 }
 
+typealias CodexExecutableResolver = @Sendable (_ environment: [String: String], _ executable: String) -> String?
+
+let defaultCodexExecutableResolver: CodexExecutableResolver = { environment, executable in
+    BinaryLocator.resolveCodexBinary(env: environment)
+        ?? TTYCommandRunner.which(executable)
+}
+
 /// RPC helper used on background tasks; safe because we confine it to the owning task.
 private final class CodexRPCClient: @unchecked Sendable {
     private static let log = CodexBarLog.logger(LogCategories.codexRPC)
@@ -489,7 +644,8 @@ private final class CodexRPCClient: @unchecked Sendable {
         arguments: [String] = ["-s", "read-only", "-a", "untrusted", "app-server"],
         environment: [String: String] = ProcessInfo.processInfo.environment,
         initializeTimeoutSeconds: TimeInterval = 8.0,
-        requestTimeoutSeconds: TimeInterval = 3.0) throws
+        requestTimeoutSeconds: TimeInterval = 3.0,
+        resolveExecutable: CodexExecutableResolver = defaultCodexExecutableResolver) throws
     {
         self.initializeTimeoutSeconds = initializeTimeoutSeconds
         self.requestTimeoutSeconds = requestTimeoutSeconds
@@ -499,13 +655,11 @@ private final class CodexRPCClient: @unchecked Sendable {
         }
         self.stdoutLineContinuation = stdoutContinuation
 
-        let resolvedExec = BinaryLocator.resolveCodexBinary(env: environment)
-            ?? TTYCommandRunner.which(executable)
+        let resolvedExec = resolveExecutable(environment, executable)
 
         guard let resolvedExec else {
             Self.log.warning("Codex RPC binary not found", metadata: ["binary": executable])
-            throw RPCWireError.startFailed(
-                "Codex CLI not found. Install with `npm i -g @openai/codex` (or bun) then relaunch CodexBar.")
+            throw CodexStatusProbeError.codexNotInstalled
         }
         var env = environment
         env["PATH"] = PathBuilder.effectivePATH(
@@ -519,12 +673,19 @@ private final class CodexRPCClient: @unchecked Sendable {
         self.process.standardOutput = self.stdoutPipe
         self.process.standardError = self.stderrPipe
 
+        if let message = CodexCLILaunchGate.shared.backgroundSkipMessage(binary: resolvedExec) {
+            Self.log.warning("Codex RPC launch skipped after recent launch failure", metadata: ["binary": resolvedExec])
+            throw RPCWireError.startFailed(message)
+        }
+
         do {
             try self.process.run()
             Self.log.debug("Codex RPC started", metadata: ["binary": resolvedExec])
         } catch {
-            Self.log.warning("Codex RPC failed to start", metadata: ["error": error.localizedDescription])
-            throw RPCWireError.startFailed(error.localizedDescription)
+            let message = error.localizedDescription
+            let throttled = CodexCLILaunchGate.shared.recordLaunchFailure(binary: resolvedExec, message: message)
+            Self.log.warning("Codex RPC failed to start", metadata: ["error": message])
+            throw RPCWireError.startFailed(throttled ?? message)
         }
 
         let stdoutHandle = self.stdoutPipe.fileHandleForReading
@@ -711,22 +872,26 @@ public struct UsageFetcher: Sendable {
     private let environment: [String: String]
     private let initializeTimeoutSeconds: TimeInterval
     private let requestTimeoutSeconds: TimeInterval
+    private let codexExecutableResolver: CodexExecutableResolver
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.environment = environment
         self.initializeTimeoutSeconds = 8.0
         self.requestTimeoutSeconds = 3.0
+        self.codexExecutableResolver = defaultCodexExecutableResolver
         LoginShellPathCache.shared.captureOnce()
     }
 
     init(
         environment: [String: String],
         initializeTimeoutSeconds: TimeInterval,
-        requestTimeoutSeconds: TimeInterval)
+        requestTimeoutSeconds: TimeInterval,
+        codexExecutableResolver: @escaping CodexExecutableResolver = defaultCodexExecutableResolver)
     {
         self.environment = environment
         self.initializeTimeoutSeconds = initializeTimeoutSeconds
         self.requestTimeoutSeconds = requestTimeoutSeconds
+        self.codexExecutableResolver = codexExecutableResolver
         LoginShellPathCache.shared.captureOnce()
     }
 
@@ -742,15 +907,17 @@ public struct UsageFetcher: Sendable {
         let rpc = try CodexRPCClient(
             environment: self.environment,
             initializeTimeoutSeconds: self.initializeTimeoutSeconds,
-            requestTimeoutSeconds: self.requestTimeoutSeconds)
+            requestTimeoutSeconds: self.requestTimeoutSeconds,
+            resolveExecutable: self.codexExecutableResolver)
         defer { rpc.shutdown() }
         do {
             try await rpc.initialize(clientName: "codexbar", clientVersion: "0.5.4")
             // The app-server answers on a single stdout stream, so keep requests
             // serialized to avoid starving one reader when multiple awaiters race
             // for the same pipe.
-            let limits = try await rpc.fetchRateLimits()
+            let limits = try await rpc.fetchRateLimits().rateLimits
             let account = try? await rpc.fetchAccount()
+            let rateLimitsPlan = Self.normalizedCodexAccountField(limits.planType)
             let identity = ProviderIdentitySnapshot(
                 providerID: .codex,
                 accountEmail: account?.account.flatMap { details in
@@ -759,9 +926,15 @@ public struct UsageFetcher: Sendable {
                 accountOrganization: nil,
                 loginMethod: account?.account.flatMap { details in
                     if case let .chatgpt(_, plan) = details { plan } else { nil }
-                })
-            let usage = Self.makeUsageSnapshot(from: limits, identity: identity)
-            let credits = Self.makeCredits(from: limits.rateLimits.credits)
+                } ?? rateLimitsPlan)
+            let credits = Self.makeCredits(from: limits.credits)
+            let shouldReturnUnavailableUsage = credits == nil || rateLimitsPlan != nil
+            let usage = CodexReconciledState.fromCLI(
+                primary: Self.makeWindow(from: limits.primary),
+                secondary: Self.makeWindow(from: limits.secondary),
+                identity: identity)?
+                .toUsageSnapshot()
+                ?? (shouldReturnUnavailableUsage ? Self.emptyCodexUsageSnapshotIfIdentified(identity: identity) : nil)
             guard usage != nil || credits != nil else {
                 throw UsageError.noRateLimitsFound
             }
@@ -793,7 +966,8 @@ public struct UsageFetcher: Sendable {
             let rpc = try CodexRPCClient(
                 environment: self.environment,
                 initializeTimeoutSeconds: self.initializeTimeoutSeconds,
-                requestTimeoutSeconds: self.requestTimeoutSeconds)
+                requestTimeoutSeconds: self.requestTimeoutSeconds,
+                resolveExecutable: self.codexExecutableResolver)
             defer { rpc.shutdown() }
             try await rpc.initialize(clientName: "codexbar", clientVersion: "0.5.4")
             let limits = try await rpc.fetchRateLimits()
@@ -844,46 +1018,6 @@ public struct UsageFetcher: Sendable {
             resetDescription: resetDescription)
     }
 
-    private static func makeUsageSnapshot(
-        from response: RPCRateLimitsResponse,
-        identity: ProviderIdentitySnapshot?) -> UsageSnapshot?
-    {
-        CodexReconciledState.fromCLI(
-            primary: self.makeWindow(from: response.rateLimits.primary),
-            secondary: self.makeWindow(from: response.rateLimits.secondary),
-            extraRateWindows: self.makeExtraRateWindows(from: response),
-            identity: identity)?
-            .toUsageSnapshot()
-    }
-
-    private static func makeExtraRateWindows(from response: RPCRateLimitsResponse) -> [NamedRateWindow] {
-        guard let buckets = response.rateLimitsByLimitId, !buckets.isEmpty else { return [] }
-
-        let baseLimitID = response.rateLimits.limitId
-        return buckets.keys.sorted().flatMap { key -> [NamedRateWindow] in
-            guard key != baseLimitID,
-                  key != "codex",
-                  buckets[key]?.limitId != baseLimitID,
-                  let bucket = buckets[key],
-                  let limitName = self.normalizedCodexAccountField(bucket.limitName)
-            else {
-                return []
-            }
-
-            let normalized = CodexRateWindowNormalizer.normalize(
-                primary: self.makeWindow(from: bucket.primary),
-                secondary: self.makeWindow(from: bucket.secondary))
-            return [
-                normalized.primary.map {
-                    NamedRateWindow(id: "\(key)-5h", title: "\(limitName) 5h", window: $0)
-                },
-                normalized.secondary.map {
-                    NamedRateWindow(id: "\(key)-weekly", title: "\(limitName) weekly", window: $0)
-                },
-            ].compactMap(\.self)
-        }
-    }
-
     private static func makeWindow(from response: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {
         guard let response else { return nil }
         let resetsAtDate = Date(timeIntervalSince1970: TimeInterval(response.resetAt))
@@ -916,6 +1050,16 @@ public struct UsageFetcher: Sendable {
     private static func makeCredits(from rpc: RPCCreditsSnapshot?) -> CreditsSnapshot? {
         guard let rpc else { return nil }
         return CreditsSnapshot(remaining: self.parseCredits(rpc.balance), events: [], updatedAt: Date())
+    }
+
+    private static func emptyCodexUsageSnapshotIfIdentified(identity: ProviderIdentitySnapshot) -> UsageSnapshot? {
+        guard identity.accountEmail != nil || identity.loginMethod != nil else { return nil }
+        return UsageSnapshot(
+            primary: nil,
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: Date(),
+            identity: identity)
     }
 
     private static func recoverUsageFromRPCError(_ error: Error) -> UsageSnapshot? {
@@ -994,7 +1138,7 @@ public struct UsageFetcher: Sendable {
         return nil
     }
 
-    static func normalizedCodexAccountField(_ value: String?) -> String? {
+    private static func normalizedCodexAccountField(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
         }
@@ -1022,13 +1166,22 @@ public struct UsageFetcher: Sendable {
 extension UsageFetcher {
     static func _mapCodexRPCLimitsForTesting(
         primary: (usedPercent: Double, windowMinutes: Int, resetsAt: Int?)?,
-        secondary: (usedPercent: Double, windowMinutes: Int, resetsAt: Int?)?) throws -> UsageSnapshot
+        secondary: (usedPercent: Double, windowMinutes: Int, resetsAt: Int?)?,
+        planType: String? = nil) throws -> UsageSnapshot
     {
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: nil,
+            accountOrganization: nil,
+            loginMethod: self.normalizedCodexAccountField(planType))
         guard let state = CodexReconciledState.fromCLI(
             primary: primary.map(self.makeTestingWindow),
             secondary: secondary.map(self.makeTestingWindow),
-            identity: nil)
+            identity: identity)
         else {
+            if let usage = self.emptyCodexUsageSnapshotIfIdentified(identity: identity) {
+                return usage
+            }
             throw UsageError.noRateLimitsFound
         }
         return state.toUsageSnapshot()
@@ -1059,14 +1212,6 @@ extension UsageFetcher {
 
     public static func _recoverCodexRPCCreditsFromErrorForTesting(_ message: String) -> CreditsSnapshot? {
         self.recoverCreditsFromRPCError(RPCWireError.requestFailed(message))
-    }
-
-    public static func _mapCodexRPCLimitsResponseForTesting(_ data: Data) throws -> UsageSnapshot {
-        let response = try JSONDecoder().decode(RPCRateLimitsResponse.self, from: data)
-        guard let snapshot = self.makeUsageSnapshot(from: response, identity: nil) else {
-            throw UsageError.noRateLimitsFound
-        }
-        return snapshot
     }
 
     private static func makeTestingWindow(

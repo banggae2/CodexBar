@@ -1,11 +1,11 @@
 import AppKit
+import CodexBarCore
 import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Hashable {
     case general
     case providers
     case display
-    case notifications
     case advanced
     case about
     case debug
@@ -16,13 +16,12 @@ enum PreferencesTab: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .general: L10n.string("tab.general")
-        case .providers: L10n.string("tab.providers")
-        case .display: L10n.string("tab.display")
-        case .notifications: L10n.string("tab.notifications")
-        case .advanced: L10n.string("tab.advanced")
-        case .about: L10n.string("tab.about")
-        case .debug: L10n.string("tab.debug")
+        case .general: L("tab_general")
+        case .providers: L("tab_providers")
+        case .display: L("tab_display")
+        case .advanced: L("tab_advanced")
+        case .about: L("tab_about")
+        case .debug: L("tab_debug")
         }
     }
 
@@ -43,6 +42,7 @@ struct PreferencesView: View {
     @Bindable var selection: PreferencesSelection
     let managedCodexAccountCoordinator: ManagedCodexAccountCoordinator
     let codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator
+    let runProviderLoginFlow: @MainActor (UsageProvider) async -> Void
     @State private var contentWidth: CGFloat = PreferencesTab.general.preferredWidth
     @State private var contentHeight: CGFloat = PreferencesTab.general.preferredHeight
 
@@ -52,7 +52,8 @@ struct PreferencesView: View {
         updater: UpdaterProviding,
         selection: PreferencesSelection,
         managedCodexAccountCoordinator: ManagedCodexAccountCoordinator = ManagedCodexAccountCoordinator(),
-        codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator? = nil)
+        codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator? = nil,
+        runProviderLoginFlow: @escaping @MainActor (UsageProvider) async -> Void = { _ in })
     {
         self.settings = settings
         self.store = store
@@ -64,48 +65,46 @@ struct PreferencesView: View {
                 settingsStore: settings,
                 usageStore: store,
                 managedAccountCoordinator: managedCodexAccountCoordinator)
+        self.runProviderLoginFlow = runProviderLoginFlow
     }
 
     var body: some View {
         TabView(selection: self.$selection.tab) {
             GeneralPane(settings: self.settings, store: self.store)
-                .tabItem { Label(L10n.string("tab.general"), systemImage: "gearshape") }
+                .tabItem { Label(L("tab_general"), systemImage: "gearshape") }
                 .tag(PreferencesTab.general)
 
             ProvidersPane(
                 settings: self.settings,
                 store: self.store,
                 managedCodexAccountCoordinator: self.managedCodexAccountCoordinator,
-                codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator)
-                .tabItem { Label(L10n.string("tab.providers"), systemImage: "square.grid.2x2") }
+                codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator,
+                runProviderLoginFlow: self.runProviderLoginFlow)
+                .tabItem { Label(L("tab_providers"), systemImage: "square.grid.2x2") }
                 .tag(PreferencesTab.providers)
 
             DisplayPane(settings: self.settings, store: self.store)
-                .tabItem { Label(L10n.string("tab.display"), systemImage: "eye") }
+                .tabItem { Label(L("tab_display"), systemImage: "eye") }
                 .tag(PreferencesTab.display)
 
-            NotificationsPane(settings: self.settings)
-                .tabItem { Label(L10n.string("tab.notifications"), systemImage: "bell") }
-                .tag(PreferencesTab.notifications)
-
             AdvancedPane(settings: self.settings)
-                .tabItem { Label(L10n.string("tab.advanced"), systemImage: "slider.horizontal.3") }
+                .tabItem { Label(L("tab_advanced"), systemImage: "slider.horizontal.3") }
                 .tag(PreferencesTab.advanced)
 
             AboutPane(updater: self.updater)
-                .tabItem { Label(L10n.string("tab.about"), systemImage: "info.circle") }
+                .tabItem { Label(L("tab_about"), systemImage: "info.circle") }
                 .tag(PreferencesTab.about)
 
             if self.settings.debugMenuEnabled {
                 DebugPane(settings: self.settings, store: self.store)
-                    .tabItem { Label(L10n.string("tab.debug"), systemImage: "ladybug") }
+                    .tabItem { Label(L("tab_debug"), systemImage: "ladybug") }
                     .tag(PreferencesTab.debug)
             }
         }
+        .id(self.settings.appLanguage)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .frame(width: self.contentWidth, height: self.contentHeight)
-        .id(self.settings.appLanguage.rawValue)
         .onAppear {
             self.updateLayout(for: self.selection.tab, animate: false)
             self.ensureValidTabSelection()
@@ -131,8 +130,14 @@ struct PreferencesView: View {
         Self.resizeSettingsWindow(width: tab.preferredWidth, height: tab.preferredHeight, animate: animate)
     }
 
+    private static let settingsWindowIdentifier = "com_apple_SwiftUI_Settings_window"
+    private static let knownTabTitles = Set(PreferencesTab.allCases.map(\.title))
+
     private static func resizeSettingsWindow(width: CGFloat, height: CGFloat, animate: Bool) {
-        guard let window = PreferencesWindowFocus.settingsWindow() else { return }
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == settingsWindowIdentifier
+                || knownTabTitles.contains($0.title)
+        }) else { return }
         let toolbarHeight = window.frame.height - window.contentLayoutRect.height
         guard toolbarHeight > 0 else { return }
         let newSize = NSSize(width: width, height: height + toolbarHeight)
