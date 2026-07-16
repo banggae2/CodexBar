@@ -72,6 +72,57 @@ struct LocalizationTests {
         #expect(L10n.string("Never prompt", localeIdentifier: "ko") == "요청 안 함")
     }
 
+    @Test
+    func `korean localization resolves visible usage pace and cost strings`() {
+        #expect(L10n.string("Resets %@", "1시간", localeIdentifier: "ko") == "1시간 재설정")
+        #expect(L10n.string("Runs out in %@", "4일 19시간", localeIdentifier: "ko") == "4일 19시간 후 소진 예상")
+        #expect(L10n.string("%d%% in reserve", 0, localeIdentifier: "ko") == "0% 여유")
+        #expect(L10n.string("%d%% in deficit", 0, localeIdentifier: "ko") == "0% 부족")
+        #expect(L10n.string("usage_percent_suffix_used", localeIdentifier: "ko") == "사용됨")
+        #expect(L10n.string("Last 30 days", localeIdentifier: "ko") == "최근 30일")
+        #expect(L10n.string("Last 30 days: %@", "$9.00", localeIdentifier: "ko") == "최근 30일: $9.00")
+        #expect(L10n.string("Est. total (%@): %@", "최근 30일", "$9.00", localeIdentifier: "ko") == "추정 합계(최근 30일): $9.00")
+
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            resetCodexBarLocalizationCacheForTesting()
+            configureUsageFormatterLocalizationProvider()
+            defer {
+                UsageFormatter.clearLocalizationProvider()
+                UsageFormatter.clearLocaleProvider()
+                resetCodexBarLocalizationCacheForTesting()
+            }
+
+            #expect(UsageFormatter.costEstimateHint(provider: .claude) == "로컬 Claude 로그를 API 요금으로 추정합니다. 토큰 합계에는 캐시 읽기/쓰기 토큰이 포함되며 Claude Code /status와 다를 수 있습니다.")
+        }
+    }
+
+    @Test
+    func `korean localization resolves merged display settings strings`() {
+        #expect(L10n.string("display_mode_title", localeIdentifier: "ko") == "표시 방식")
+        #expect(L10n.string("show_all_token_accounts_title", localeIdentifier: "ko") == "모든 토큰 계정 표시")
+        #expect(L10n.string("show_all_token_accounts_subtitle", localeIdentifier: "ko").contains("스택 방식"))
+        #expect(L10n.string("multi_account_layout_stacked", localeIdentifier: "ko") == "스택")
+        #expect(L10n.string("overview_tab_providers_title", localeIdentifier: "ko") == "개요 탭 공급자")
+    }
+
+    @Test
+    func `korean localization covers visible upstream settings strings`() {
+        #expect(L10n.string("tab_advanced", localeIdentifier: "ko") == "고급")
+        #expect(L10n.string("section_notifications", localeIdentifier: "ko") == "알림")
+        #expect(L10n.string("refresh_cadence_title", localeIdentifier: "ko") == "새로 고침 주기")
+        #expect(L10n.string("open_menu_shortcut_title", localeIdentifier: "ko") == "메뉴 열기")
+        #expect(L10n.string("show_debug_settings_title", localeIdentifier: "ko") == "디버그 설정 표시")
+        #expect(L10n.string("quota_warning_notifications_title", localeIdentifier: "ko") == "할당량 경고 알림")
+    }
+
+    @Test
+    func `multi account layout labels follow selected Korean language`() {
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            #expect(MultiAccountMenuLayout.segmented.label == "전환 막대")
+            #expect(MultiAccountMenuLayout.stacked.label == "스택")
+        }
+    }
+
     private static func makeSettingsStore(
         userDefaults: UserDefaults,
         suiteName: String,

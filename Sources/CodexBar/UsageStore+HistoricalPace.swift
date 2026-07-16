@@ -95,7 +95,7 @@ extension UsageStore {
     {
         guard self.settings.historicalTrackingEnabled else { return }
         guard authorityDecision.allowedEffects.contains(.historicalBackfill) else { return }
-        let usageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+        let usageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
             from: dashboard.usageBreakdown)
         guard !usageBreakdown.isEmpty else { return }
 

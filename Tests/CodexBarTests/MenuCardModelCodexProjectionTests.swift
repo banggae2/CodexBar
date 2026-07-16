@@ -873,7 +873,7 @@ struct MenuCardModelCodexProjectionTests {
     }
 
     @Test
-    func `hides codex spark extra metric when showOptionalCreditsAndExtraUsage is false`() throws {
+    func `shows codex spark extra metric when showOptionalCreditsAndExtraUsage is false`() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let metadata = try #require(ProviderDefaults.metadata[.codex])
         let identity = ProviderIdentitySnapshot(
@@ -947,8 +947,8 @@ struct MenuCardModelCodexProjectionTests {
             hidePersonalInfo: false,
             now: now))
 
-        #expect(!model.metrics.contains { $0.id == "codex-spark" })
-        #expect(!model.metrics.contains { $0.id == "codex-spark-weekly" })
+        #expect(model.metrics.contains { $0.id == "codex-spark" })
+        #expect(model.metrics.contains { $0.id == "codex-spark-weekly" })
         #expect(model.metrics.contains { $0.id == "primary" })
         #expect(model.metrics.contains { $0.id == "secondary" })
     }

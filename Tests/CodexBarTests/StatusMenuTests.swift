@@ -87,6 +87,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.alibabaCodingPlanAPIRegion = .chinaMainland
 
         let fetcher = UsageFetcher()
@@ -285,6 +286,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
 
         let store = self.makeCodexStore(settings: settings, dashboardAuthorized: false)
         let controller = StatusItemController(
@@ -419,6 +421,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
         var delayedRefreshWakeCount = 0
@@ -448,6 +451,7 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
 
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
@@ -788,6 +792,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = true
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
 
         let registry = ProviderRegistry.shared
         for provider in UsageProvider.allCases {
@@ -828,6 +833,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
 
         let registry = ProviderRegistry.shared
         if let codexMeta = registry.metadata[.codex] {
@@ -867,6 +873,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
 
         let registry = ProviderRegistry.shared
         try settings.setProviderEnabled(provider: .codex, metadata: #require(registry.metadata[.codex]), enabled: true)
@@ -1190,6 +1197,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.selectedMenuProvider = .openai
 
         let registry = ProviderRegistry.shared
@@ -1313,6 +1321,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.costUsageEnabled = true
 
         let registry = ProviderRegistry.shared

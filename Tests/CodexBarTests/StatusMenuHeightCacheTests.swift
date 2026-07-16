@@ -42,6 +42,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         let registry = ProviderRegistry.shared
         for provider in UsageProvider.allCases {
             guard let metadata = registry.metadata[provider] else { continue }
@@ -222,6 +223,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         let registry = ProviderRegistry.shared
         for provider in UsageProvider.allCases {
             guard let metadata = registry.metadata[provider] else { continue }
@@ -271,6 +273,7 @@ extension StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = .iconPercent
         let store = self.makeCodexStore(settings: settings, dashboardAuthorized: false)
         return StatusItemController(
             store: store,

@@ -202,7 +202,7 @@ extension StatusItemController {
         let contentSignature: String = switch identity.chartID {
         case Self.usageBreakdownChartID:
             Self.dashboardBreakdownReadinessSignature(
-                OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+                OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
                     from: self.store.openAIDashboard?.usageBreakdown ?? []))
         case Self.creditsHistoryChartID:
             Self.dashboardBreakdownReadinessSignature(self.store.openAIDashboard?.dailyBreakdown ?? [])
@@ -311,7 +311,7 @@ extension StatusItemController {
 
     @discardableResult
     func appendUsageBreakdownChartItem(to submenu: NSMenu, width: CGFloat) -> Bool {
-        let breakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+        let breakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
             from: self.store.openAIDashboard?.usageBreakdown ?? [])
         guard !breakdown.isEmpty else { return false }
 

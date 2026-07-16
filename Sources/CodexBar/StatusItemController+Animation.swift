@@ -315,6 +315,33 @@ extension StatusItemController {
             return .none
         }()
         if showBrandPercent,
+           self.settings.menuBarUsageDisplayStyle == .compactBars
+        {
+            let providers = self.settings.compactBarProviders(activeProviders: self.store.enabledProvidersForDisplay())
+            let entries = self.menuBarCompactUsageEntries(for: providers)
+            if !entries.isEmpty {
+                let values = entries.map { entry in
+                    MenuBarCompactUsageRenderer.percentText(for: entry)
+                }.joined(separator: ",")
+                let signature = [
+                    "mode=compactBars",
+                    "providers=\(entries.map(\.provider.rawValue).joined(separator: ","))",
+                    "values=\(values)",
+                    "showUsed=\(showUsed ? "1" : "0")",
+                    "anim=\(needsAnimation ? "1" : "0")",
+                ].joined(separator: "|")
+                if self.shouldSkipMergedIconRender(signature) {
+                    return true
+                }
+                self.setButtonTitle(nil, for: button)
+                if let image = MenuBarCompactUsageRenderer.image(entries: entries) {
+                    self.setCompactStatusItemImage(image, for: self.statusItem)
+                }
+                return false
+            }
+        }
+        self.resetStatusItemLength(self.statusItem)
+        if showBrandPercent,
            let brand = ProviderBrandIcon.image(for: primaryProvider)
         {
             let displayText = self.menuBarDisplayText(for: primaryProvider, snapshot: snapshot)
@@ -441,7 +468,9 @@ extension StatusItemController {
 
     @discardableResult
     func applyIcon(for provider: UsageProvider, phase: Double?) -> Bool {
-        guard let button = self.statusItems[provider]?.button else { return false }
+        guard let item = self.statusItems[provider],
+              let button = item.button
+        else { return false }
         let snapshot = self.store.snapshot(for: provider)
         // IconRenderer treats these values as a left-to-right "progress fill" percentage; depending on the
         // user setting we pass either "percent left" or "percent used".
@@ -449,6 +478,21 @@ extension StatusItemController {
         let showBrandPercent = self.settings.menuBarShowsBrandIconWithPercent
         let style: IconStyle = self.store.style(for: provider)
         let warningFlash = self.quotaWarningFlashActive(provider: provider)
+
+        if showBrandPercent,
+           self.settings.menuBarUsageDisplayStyle == .compactBars,
+           self.store.enabledProvidersForDisplay().count <= 1,
+           self.settings.isProviderShownInCompactBars(provider)
+        {
+            self.setButtonTitle(nil, for: button)
+            if let image = MenuBarCompactUsageRenderer
+                .image(entries: self.menuBarCompactUsageEntries(for: [provider]))
+            {
+                self.setCompactStatusItemImage(image, for: item)
+            }
+            return false
+        }
+        self.resetStatusItemLength(item)
 
         if showBrandPercent,
            let brand = ProviderBrandIcon.image(for: provider)
@@ -674,6 +718,25 @@ extension StatusItemController {
         button.image = image
     }
 
+    static func compactStatusItemLength(for image: NSImage) -> CGFloat {
+        ceil(image.size.width) + 4
+    }
+
+    private func setCompactStatusItemImage(_ image: NSImage, for item: NSStatusItem) {
+        let length = Self.compactStatusItemLength(for: image)
+        if item.length != length {
+            item.length = length
+        }
+        guard let button = item.button else { return }
+        self.setButtonImage(image, for: button)
+    }
+
+    private func resetStatusItemLength(_ item: NSStatusItem) {
+        if item.length != NSStatusItem.variableLength {
+            item.length = NSStatusItem.variableLength
+        }
+    }
+
     private func setButtonTitle(_ title: String?, for button: NSStatusBarButton) {
         let value = Self.buttonTitle(title, hasImage: button.image != nil)
         if button.title != value {
@@ -781,6 +844,27 @@ extension StatusItemController {
         }
 
         return displayText
+    }
+
+    func menuBarCompactUsageEntries(for providers: [UsageProvider]) -> [MenuBarCompactUsageRenderer.Entry] {
+        Array(providers.prefix(MenuBarCompactUsageRenderer.maxProviders)).map { provider in
+            let snapshot = self.store.snapshot(for: provider)
+            let primaryPercent = self.compactUsagePercent(for: snapshot?.primary)
+            let secondaryPercent = self.compactUsagePercent(for: snapshot?.secondary)
+            let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)
+            return MenuBarCompactUsageRenderer.Entry(
+                provider: provider,
+                code: MenuBarCompactUsageRenderer.providerCode(for: provider),
+                percent: primaryPercent,
+                secondaryPercent: secondaryPercent,
+                color: descriptor.branding.color)
+        }
+    }
+
+    private func compactUsagePercent(for window: RateWindow?) -> Double? {
+        window.map {
+            min(100, max(0, self.settings.usageBarsShowUsed ? $0.usedPercent : $0.remainingPercent))
+        }
     }
 
     nonisolated static func deepSeekBalanceDisplayText(snapshot: UsageSnapshot?) -> String? {

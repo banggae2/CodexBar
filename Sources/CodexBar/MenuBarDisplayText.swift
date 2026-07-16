@@ -39,13 +39,11 @@ enum MenuBarDisplayText {
             if let resetsAt = percentWindow.resetsAt {
                 let description = switch resetTimeDisplayStyle {
                 case .countdown:
-                    UsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
+                    AppUsageFormatter.resetCountdownDescription(from: resetsAt, now: now)
                 case .absolute:
-                    UsageFormatter.resetDescription(from: resetsAt, now: now)
+                    AppUsageFormatter.resetDescription(from: resetsAt, now: now)
                 case .both:
-                    UsageFormatter.resetLine(for: percentWindow, style: resetTimeDisplayStyle, now: now)?
-                        .replacingOccurrences(of: "^Resets\\s+", with: "", options: .regularExpression)
-                        ?? UsageFormatter.resetDescription(from: resetsAt, now: now)
+                    AppUsageFormatter.resetText(from: resetsAt, style: resetTimeDisplayStyle, now: now)
                 }
                 return "↻ \(description)"
             }

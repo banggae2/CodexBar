@@ -333,7 +333,16 @@ let openAIDashboardScrapeScript = """
       const displayNameForUsageServiceKey = (raw) => {
         const key = raw === null || raw === undefined ? '' : String(raw).trim();
         if (!key) return key;
-        if (isSkillUsageServiceKey(key)) return null;
+        if (isSkillUsageServiceKey(key)) {
+          const suffix = key.replace(/^skillusage:/i, '').trim();
+          if (!suffix) return key;
+          return suffix
+            .replace(/[:_-]+/g, ' ')
+            .split(' ')
+            .filter(Boolean)
+            .map(w => w.length <= 2 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+        }
         if (key.toUpperCase() === key && key.length <= 6) return key;
         const lower = key.toLowerCase();
         if (lower === 'cli') return 'CLI';
@@ -488,7 +497,7 @@ let openAIDashboardScrapeScript = """
       const parseUsageBreakdownFromChartPaths = (paths, legendMap) => {
         const totalsByDay = {}; // day -> service -> value
         const addValue = (day, service, value) => {
-          if (!day || !service || isSkillUsageServiceKey(service)) return false;
+          if (!day || !service) return false;
           if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false;
           if (!totalsByDay[day]) totalsByDay[day] = {};
           totalsByDay[day][service] = (totalsByDay[day][service] || 0) + value;

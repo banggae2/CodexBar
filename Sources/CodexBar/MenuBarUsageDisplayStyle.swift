@@ -10,15 +10,15 @@ enum MenuBarUsageDisplayStyle: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .iconPercent: L10n.string("menuBarUsageDisplay.iconPercent")
-        case .compactBars: L10n.string("menuBarUsageDisplay.compactBars")
+        case .iconPercent: L("menuBarUsageDisplay.iconPercent")
+        case .compactBars: L("menuBarUsageDisplay.compactBars")
         }
     }
 
     var description: String {
         switch self {
-        case .iconPercent: L10n.string("menuBarUsageDisplay.iconPercent.description")
-        case .compactBars: L10n.string("menuBarUsageDisplay.compactBars.description")
+        case .iconPercent: L("menuBarUsageDisplay.iconPercent.description")
+        case .compactBars: L("menuBarUsageDisplay.compactBars.description")
         }
     }
 }

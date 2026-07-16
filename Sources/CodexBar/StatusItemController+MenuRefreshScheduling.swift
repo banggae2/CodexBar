@@ -99,7 +99,7 @@ extension StatusItemController {
 
     func menuAdjunctReadinessSignature() -> String {
         let dashboard = self.store.openAIDashboard
-        let dashboardUsageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+        let dashboardUsageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
             from: dashboard?.usageBreakdown ?? [])
         var parts = [
             "costEnabled=\(self.settings.costUsageEnabled ? "1" : "0")",

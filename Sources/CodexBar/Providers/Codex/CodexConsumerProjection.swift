@@ -245,7 +245,7 @@ struct CodexConsumerProjection {
             []
         }
 
-        let displayableUsageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+        let displayableUsageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
             from: dashboard?.usageBreakdown ?? [])
         let canShowBuyCredits = surface == .liveCard
         let hasUsageBreakdown = surface == .liveCard

@@ -59,6 +59,19 @@ public enum UsageFormatter {
         if mainValue != key { return mainValue }
 
         switch key {
+        case "cost_estimate_hint": return self.costEstimateHint
+        case "claude_cost_estimate_hint":
+            return "Estimated from local Claude logs at API rates; token totals include cache read/write tokens " +
+                "and may differ from Claude Code /status."
+        case "Duration now": return "now"
+        case "Duration value minutes format": return "%dm"
+        case "Duration value hours format": return "%dh"
+        case "Duration value hours minutes format": return "%dh %dm"
+        case "Duration value days format": return "%dd"
+        case "Duration value days hours format": return "%dd %dh"
+        case "Duration future format": return "in %@"
+        case "Reset combined format": return "%@ (%@)"
+        case "Tomorrow time format": return "tomorrow, %@"
         case "usage_percent_suffix_left": return "left"
         case "usage_percent_suffix_used": return "used"
         default: return key
@@ -103,14 +116,14 @@ public enum UsageFormatter {
         // Human-friendly phrasing: today / tomorrow / date+time.
         let calendar = Calendar.current
         if calendar.isDate(date, inSameDayAs: now) {
-            return date.formatted(.dateTime.hour().minute().locale(self.currentLocale()))
+            return self.timeString(from: date)
         }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
            calendar.isDate(date, inSameDayAs: tomorrow)
         {
-            return "tomorrow, \(date.formatted(.dateTime.hour().minute().locale(self.currentLocale())))"
+            return self.localized("Tomorrow time format", self.timeString(from: date))
         }
-        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute().locale(self.currentLocale()))
+        return self.dateTimeString(from: date)
     }
 
     public static func resetLine(
@@ -119,14 +132,11 @@ public enum UsageFormatter {
         now: Date = .init()) -> String?
     {
         if let date = window.resetsAt {
-            let countdown = self.resetCountdownDescription(from: date, now: now)
+            let countdown = self.localizedResetCountdownDescription(from: date, now: now)
             switch style {
             case .countdown:
-                if countdown == "now" {
+                if countdown == self.localized("Duration now") {
                     return self.localized("Resets now")
-                }
-                if countdown.hasPrefix("in ") {
-                    return self.localized("Resets in %@", String(countdown.dropFirst(3)))
                 }
                 return self.localized("Resets %@", countdown)
             case .absolute:
@@ -152,6 +162,46 @@ public enum UsageFormatter {
             return self.localized("Resets %@", trimmed)
         }
         return nil
+    }
+
+    private static func localizedResetCountdownDescription(from date: Date, now: Date) -> String {
+        let seconds = max(0, date.timeIntervalSince(now))
+        if seconds < 1 { return self.localized("Duration now") }
+
+        let totalMinutes = max(1, Int(ceil(seconds / 60.0)))
+        return self.localized("Duration future format", self.localizedDurationValue(minutes: totalMinutes))
+    }
+
+    private static func localizedDurationValue(minutes totalMinutes: Int) -> String {
+        let days = totalMinutes / (24 * 60)
+        let hours = (totalMinutes / 60) % 24
+        let minutes = totalMinutes % 60
+
+        if days > 0 {
+            if hours > 0 { return self.localized("Duration value days hours format", days, hours) }
+            return self.localized("Duration value days format", days)
+        }
+        if hours > 0 {
+            if minutes > 0 { return self.localized("Duration value hours minutes format", hours, minutes) }
+            return self.localized("Duration value hours format", hours)
+        }
+        return self.localized("Duration value minutes format", totalMinutes)
+    }
+
+    private static func timeString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = self.currentLocale()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private static func dateTimeString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = self.currentLocale()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     public static func updatedString(from date: Date, now: Date = .init()) -> String {
@@ -210,10 +260,9 @@ public enum UsageFormatter {
     public static func costEstimateHint(provider: UsageProvider) -> String {
         switch provider {
         case .claude:
-            "Estimated from local Claude logs at API rates; token totals include cache read/write tokens " +
-                "and may differ from Claude Code /status."
+            self.localized("claude_cost_estimate_hint")
         default:
-            self.costEstimateHint
+            self.localized("cost_estimate_hint")
         }
     }
 

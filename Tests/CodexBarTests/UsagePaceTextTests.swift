@@ -83,6 +83,25 @@ struct UsagePaceTextTests {
         #expect(detail.rightLabel == "Runs out in 2d · ≈ 70% run-out risk")
     }
 
+    @Test
+    func `korean pace detail localizes duration units`() {
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            let now = Date(timeIntervalSince1970: 0)
+            let pace = UsagePace(
+                stage: .ahead,
+                deltaPercent: 8,
+                expectedUsedPercent: 42,
+                actualUsedPercent: 50,
+                etaSeconds: 4 * 24 * 3600 + 19 * 3600,
+                willLastToReset: false,
+                runOutProbability: nil)
+
+            let detail = UsagePaceText.weeklyDetail(pace: pace, now: now)
+
+            #expect(detail.rightLabel == "4일 19시간 후 소진 예상")
+        }
+    }
+
     // MARK: - Session pace (5-hour window)
 
     @Test

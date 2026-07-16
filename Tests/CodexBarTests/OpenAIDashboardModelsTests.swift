@@ -4,7 +4,7 @@ import Testing
 
 struct OpenAIDashboardModelsTests {
     @Test
-    func `removes skill usage services from usage breakdown`() {
+    func `normalizes usage breakdown without dropping skill usage services`() {
         let breakdown = [
             OpenAIDashboardDailyBreakdown(
                 day: "2026-04-30",
@@ -22,20 +22,28 @@ struct OpenAIDashboardModelsTests {
                 totalCreditsUsed: 3),
         ]
 
-        let filtered = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(from: breakdown)
+        let normalized = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(from: breakdown)
 
-        #expect(filtered == [
+        #expect(normalized == [
             OpenAIDashboardDailyBreakdown(
                 day: "2026-04-30",
                 services: [
                     OpenAIDashboardServiceUsage(service: "Desktop App", creditsUsed: 10),
+                    OpenAIDashboardServiceUsage(service: "Skillusage:imagegen", creditsUsed: 7),
+                    OpenAIDashboardServiceUsage(service: " skillusage:github:github ", creditsUsed: 2),
                 ],
-                totalCreditsUsed: 10),
+                totalCreditsUsed: 19),
+            OpenAIDashboardDailyBreakdown(
+                day: "2026-04-29",
+                services: [
+                    OpenAIDashboardServiceUsage(service: "Skillusage:deep Research", creditsUsed: 3),
+                ],
+                totalCreditsUsed: 3),
         ])
     }
 
     @Test
-    func `snapshot initializer sanitizes usage breakdown`() {
+    func `snapshot initializer preserves all usage breakdown services`() {
         let snapshot = OpenAIDashboardSnapshot(
             signedInEmail: "codex@example.com",
             codeReviewRemainingPercent: nil,
@@ -58,8 +66,9 @@ struct OpenAIDashboardModelsTests {
                 day: "2026-04-30",
                 services: [
                     OpenAIDashboardServiceUsage(service: "CLI", creditsUsed: 4),
+                    OpenAIDashboardServiceUsage(service: "Skillusage:pdf Renderer", creditsUsed: 6),
                 ],
-                totalCreditsUsed: 4),
+                totalCreditsUsed: 10),
         ])
     }
 

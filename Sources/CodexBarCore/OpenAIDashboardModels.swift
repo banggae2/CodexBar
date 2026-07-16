@@ -40,7 +40,7 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
         self.codeReviewLimit = codeReviewLimit
         self.creditEvents = creditEvents
         self.dailyBreakdown = dailyBreakdown
-        self.usageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(from: usageBreakdown)
+        self.usageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(from: usageBreakdown)
         self.creditsPurchaseURL = creditsPurchaseURL
         self.primaryLimit = primaryLimit
         self.secondaryLimit = secondaryLimit
@@ -81,7 +81,7 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
         let decodedUsageBreakdown = try container.decodeIfPresent(
             [OpenAIDashboardDailyBreakdown].self,
             forKey: .usageBreakdown) ?? []
-        self.usageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(
+        self.usageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(
             from: decodedUsageBreakdown)
         self.creditsPurchaseURL = try container.decodeIfPresent(String.self, forKey: .creditsPurchaseURL)
         self.primaryLimit = try container.decodeIfPresent(RateWindow.self, forKey: .primaryLimit)
@@ -165,7 +165,7 @@ public struct OpenAIDashboardDailyBreakdown: Codable, Equatable, Sendable {
             .hasPrefix("skillusage:")
     }
 
-    public static func removingSkillUsageServices(
+    public static func normalizedUsageBreakdown(
         from breakdown: [OpenAIDashboardDailyBreakdown])
         -> [OpenAIDashboardDailyBreakdown]
     {
@@ -174,14 +174,10 @@ public struct OpenAIDashboardDailyBreakdown: Codable, Equatable, Sendable {
                 return day.totalCreditsUsed > 0 ? day : nil
             }
 
-            let services = day.services.filter { !self.isSkillUsageService($0.service) }
-            guard !services.isEmpty else { return nil }
-
-            let total = services.reduce(0) { $0 + $1.creditsUsed }
             return OpenAIDashboardDailyBreakdown(
                 day: day.day,
-                services: services,
-                totalCreditsUsed: total)
+                services: day.services,
+                totalCreditsUsed: day.services.reduce(0) { $0 + $1.creditsUsed })
         }
     }
 }

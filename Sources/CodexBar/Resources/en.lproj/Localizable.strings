@@ -653,6 +653,7 @@
 /* Cost estimation */
 "cost_header_estimated" = "Cost (estimated)";
 "cost_estimate_hint" = "Estimated from local logs · may differ from your bill";
+"claude_cost_estimate_hint" = "Estimated from local Claude logs at API rates; token totals include cache read/write tokens and may differ from Claude Code /status.";
 "No JetBrains IDE with AI Assistant detected. Install a JetBrains IDE and enable AI Assistant." = "No JetBrains IDE with AI Assistant detected. Install a JetBrains IDE and enable AI Assistant.";
 "OpenRouter API token not configured. Set OPENROUTER_API_KEY environment variable or configure in Settings." = "OpenRouter API token not configured. Set OPENROUTER_API_KEY environment variable or configure in Settings.";
 "z.ai API token not found. Set apiKey in ~/.codexbar/config.json or Z_AI_API_KEY." = "z.ai API token not found. Set apiKey in ~/.codexbar/config.json or Z_AI_API_KEY.";
@@ -710,6 +711,12 @@
 "Updated time format" = "Updated %@";
 "Projected empty in %@" = "Projected empty in %@";
 "Runs out in %@" = "Runs out in %@";
+"Duration value minutes format" = "%dm";
+"Duration value hours format" = "%dh";
+"Duration value hours minutes format" = "%dh %dm";
+"Duration value days format" = "%dd";
+"Duration value days hours format" = "%dd %dh";
+"Duration future format" = "in %@";
 "Pace: %@" = "Pace: %@";
 "Pace: %@ · %@" = "Pace: %@ · %@";
 "%@ · %@" = "%@ · %@";
@@ -1072,6 +1079,17 @@
 "Clear" = "Clear";
 "No matching providers" = "No matching providers";
 "Search providers" = "Search providers";
+"Usage display style" = "Usage display style";
+"Choose how usage appears in the menu bar." = "Choose how usage appears in the menu bar.";
+"menuBarUsageDisplay.iconPercent" = "Icon + percent";
+"menuBarUsageDisplay.compactBars" = "Compact bars";
+"menuBarUsageDisplay.iconPercent.description" = "Show the current provider icon with percent or pace text.";
+"menuBarUsageDisplay.compactBars.description" = "Show up to 5 providers as two-row compact usage bars.";
+"Compact bar providers" = "Compact bar providers";
+"Select Compact bars to choose which providers appear there." = "Select Compact bars to choose which providers appear there.";
+"No enabled providers available for compact bars." = "No enabled providers available for compact bars.";
+"Show in compact bars" = "Show in compact bars";
+"Menu Bar Extra still shows every enabled provider." = "Menu Bar Extra still shows every enabled provider.";
 
 "language_vietnamese" = "Vietnamese";
 

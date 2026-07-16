@@ -33,12 +33,16 @@ struct StatusItemControllerSplitLifecycleTests {
         return view.subviews.contains { self.containsHostingView($0) }
     }
 
-    private func makeSplitController() throws -> (SettingsStore, StatusItemController) {
+    private func makeSplitController(
+        menuBarUsageDisplayStyle: MenuBarUsageDisplayStyle = .iconPercent)
+        throws -> (SettingsStore, StatusItemController)
+    {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
+        settings.menuBarUsageDisplayStyle = menuBarUsageDisplayStyle
         settings.providerDetectionCompleted = true
 
         let registry = ProviderRegistry.shared
@@ -63,6 +67,21 @@ struct StatusItemControllerSplitLifecycleTests {
             preferencesSelection: PreferencesSelection(),
             statusBar: self.makeStatusBarForTesting())
         return (settings, controller)
+    }
+
+    @Test
+    func `compact bars render multiple providers as one merged stacked status item`() throws {
+        let (settings, controller) = try self.makeSplitController(menuBarUsageDisplayStyle: .compactBars)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        #expect(settings.mergeIcons == false)
+        #expect(controller.shouldMergeIcons)
+        #expect(controller.statusItem.isVisible == true)
+        #expect(controller.statusItems.isEmpty)
+
+        let mergedButton = try #require(controller.statusItem.button)
+        #expect(mergedButton.image != nil)
+        #expect(controller.lastAppliedMergedIconRenderSignature?.contains("mode=compactBars") == true)
     }
 
     @Test

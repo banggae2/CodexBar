@@ -64,6 +64,11 @@ struct SettingsStoreCoverageTests {
         settings.setMenuBarMetricPreference(.secondary, for: .zai)
         #expect(settings.menuBarMetricPreference(for: .zai) == .secondary)
 
+        #expect(settings.menuBarShowsBrandIconWithPercent == true)
+        #expect(settings.menuBarUsageDisplayStyle == .compactBars)
+        settings.menuBarUsageDisplayStyle = .iconPercent
+        #expect(settings.menuBarUsageDisplayStyle == .iconPercent)
+
         settings.menuBarDisplayMode = .pace
         #expect(settings.menuBarDisplayMode == .pace)
         #expect(settings.historicalTrackingEnabled == false)
@@ -117,6 +122,27 @@ struct SettingsStoreCoverageTests {
         #expect(reloaded.multiAccountMenuLayout == .stacked)
         reloaded.showAllTokenAccountsInMenu = false
         #expect(reloaded.multiAccountMenuLayout == .segmented)
+    }
+
+    @Test
+    func `compact bar provider visibility defaults to shown and persists opt out`() throws {
+        let suite = "SettingsStoreCoverageTests-compact-bar-provider-visibility"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+
+        let first = Self.makeSettingsStore(userDefaults: defaults, configStore: configStore)
+        #expect(first.isProviderShownInCompactBars(.codex))
+        #expect(first.compactBarProviders(activeProviders: [.codex, .claude, .gemini]) == [.codex, .claude, .gemini])
+
+        first.setProviderShownInCompactBars(.claude, isShown: false)
+        #expect(!first.isProviderShownInCompactBars(.claude))
+        #expect(first.isProviderShownInCompactBars(.codex))
+        #expect(first.compactBarProviders(activeProviders: [.codex, .claude, .gemini]) == [.codex, .gemini])
+
+        let second = Self.makeSettingsStore(userDefaults: defaults, configStore: configStore)
+        #expect(!second.isProviderShownInCompactBars(.claude))
+        #expect(second.compactBarProviders(activeProviders: [.codex, .claude]) == [.codex])
     }
 
     @Test

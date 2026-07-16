@@ -366,11 +366,15 @@ extension SettingsStore {
         let providerChangelogLinksEnabled = userDefaults.object(
             forKey: "providerChangelogLinksEnabled") as? Bool ?? false
         let menuBarShowsBrandIconWithPercent = userDefaults.object(
-            forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? false
+            forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? true
+        let menuBarUsageDisplayStyleRaw = userDefaults.string(forKey: "menuBarUsageDisplayStyle")
+            ?? MenuBarUsageDisplayStyle.compactBars.rawValue
         let menuBarDisplayModeRaw = userDefaults.string(forKey: "menuBarDisplayMode")
             ?? MenuBarDisplayMode.percent.rawValue
         let kiroMenuBarDisplayModeRaw = userDefaults.string(forKey: "kiroMenuBarDisplayMode")
             ?? KiroMenuBarDisplayMode.automatic.rawValue
+        let menuBarCompactHiddenProvidersRaw = userDefaults.array(
+            forKey: "menuBarCompactHiddenProviders") as? [String] ?? []
         let historicalTrackingEnabled = userDefaults.object(forKey: "historicalTrackingEnabled") as? Bool ?? false
         let multiAccountMenuLayoutRaw = userDefaults.string(forKey: "multiAccountMenuLayout") ?? {
             let legacyShowAll = userDefaults.object(forKey: "showAllTokenAccountsInMenu") as? Bool ?? false
@@ -442,8 +446,10 @@ extension SettingsStore {
             resetTimesShowAbsolute: resetTimesShowAbsolute,
             providerChangelogLinksEnabled: providerChangelogLinksEnabled,
             menuBarShowsBrandIconWithPercent: menuBarShowsBrandIconWithPercent,
+            menuBarUsageDisplayStyleRaw: menuBarUsageDisplayStyleRaw,
             menuBarDisplayModeRaw: menuBarDisplayModeRaw,
             kiroMenuBarDisplayModeRaw: kiroMenuBarDisplayModeRaw,
+            menuBarCompactHiddenProvidersRaw: menuBarCompactHiddenProvidersRaw,
             historicalTrackingEnabled: historicalTrackingEnabled,
             multiAccountMenuLayoutRaw: multiAccountMenuLayoutRaw,
             menuBarMetricPreferencesRaw: resolvedPreferences,

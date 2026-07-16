@@ -45,6 +45,59 @@ struct MenuBarResetTimeDisplayTests {
     }
 
     @Test
+    func `reset time mode uses localized Korean countdown preference`() {
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let resetsAt = now.addingTimeInterval(2 * 3600 + 15 * 60)
+            let window = RateWindow(
+                usedPercent: 42,
+                windowMinutes: 300,
+                resetsAt: resetsAt,
+                resetDescription: nil)
+
+            let text = MenuBarDisplayText.displayText(
+                mode: .resetTime,
+                percentWindow: window,
+                showUsed: true,
+                resetTimeDisplayStyle: .countdown,
+                now: now)
+
+            #expect(text == "↻ 2시간 15분 후")
+        }
+    }
+
+    @Test
+    func `reset time mode strips localized Korean reset wrapper in combined preference`() {
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            resetCodexBarLocalizationCacheForTesting()
+            configureUsageFormatterLocalizationProvider()
+            defer {
+                UsageFormatter.clearLocalizationProvider()
+                UsageFormatter.clearLocaleProvider()
+                resetCodexBarLocalizationCacheForTesting()
+            }
+
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let resetsAt = now.addingTimeInterval(2 * 3600 + 15 * 60)
+            let window = RateWindow(
+                usedPercent: 42,
+                windowMinutes: 300,
+                resetsAt: resetsAt,
+                resetDescription: nil)
+            let absolute = UsageFormatter.resetDescription(from: resetsAt, now: now)
+
+            let text = MenuBarDisplayText.displayText(
+                mode: .resetTime,
+                percentWindow: window,
+                showUsed: true,
+                resetTimeDisplayStyle: .both,
+                now: now)
+
+            #expect(text == "↻ 2시간 15분 후(\(absolute))")
+        }
+    }
+
+    @Test
     func `reset time mode falls back to used percent without reset metadata`() {
         let window = RateWindow(
             usedPercent: 42,

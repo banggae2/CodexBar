@@ -225,6 +225,23 @@ extension SettingsStore {
         }
     }
 
+    private var menuBarUsageDisplayStyleRaw: String? {
+        get { self.defaultsState.menuBarUsageDisplayStyleRaw }
+        set {
+            self.defaultsState.menuBarUsageDisplayStyleRaw = newValue
+            if let raw = newValue {
+                self.userDefaults.set(raw, forKey: "menuBarUsageDisplayStyle")
+            } else {
+                self.userDefaults.removeObject(forKey: "menuBarUsageDisplayStyle")
+            }
+        }
+    }
+
+    var menuBarUsageDisplayStyle: MenuBarUsageDisplayStyle {
+        get { MenuBarUsageDisplayStyle(rawValue: self.menuBarUsageDisplayStyleRaw ?? "") ?? .compactBars }
+        set { self.menuBarUsageDisplayStyleRaw = newValue.rawValue }
+    }
+
     private var menuBarDisplayModeRaw: String? {
         get { self.defaultsState.menuBarDisplayModeRaw }
         set {
@@ -240,6 +257,41 @@ extension SettingsStore {
     var menuBarDisplayMode: MenuBarDisplayMode {
         get { MenuBarDisplayMode(rawValue: self.menuBarDisplayModeRaw ?? "") ?? .percent }
         set { self.menuBarDisplayModeRaw = newValue.rawValue }
+    }
+
+    private var menuBarCompactHiddenProvidersRaw: [String] {
+        get { self.defaultsState.menuBarCompactHiddenProvidersRaw }
+        set {
+            self.defaultsState.menuBarCompactHiddenProvidersRaw = newValue
+            self.userDefaults.set(newValue, forKey: "menuBarCompactHiddenProviders")
+        }
+    }
+
+    var menuBarCompactHiddenProviders: [UsageProvider] {
+        get { Self.decodeProviders(self.menuBarCompactHiddenProvidersRaw) }
+        set {
+            let normalized = Self.normalizeProviders(newValue)
+            self.menuBarCompactHiddenProvidersRaw = normalized.map(\.rawValue)
+        }
+    }
+
+    func isProviderShownInCompactBars(_ provider: UsageProvider) -> Bool {
+        !Set(self.menuBarCompactHiddenProviders).contains(provider)
+    }
+
+    func setProviderShownInCompactBars(_ provider: UsageProvider, isShown: Bool) {
+        var hidden = Set(self.menuBarCompactHiddenProviders)
+        if isShown {
+            hidden.remove(provider)
+        } else {
+            hidden.insert(provider)
+        }
+        self.menuBarCompactHiddenProviders = UsageProvider.allCases.filter { hidden.contains($0) }
+    }
+
+    func compactBarProviders(activeProviders: [UsageProvider]) -> [UsageProvider] {
+        let hidden = Set(self.menuBarCompactHiddenProviders)
+        return Self.normalizeProviders(activeProviders).filter { !hidden.contains($0) }
     }
 
     private var kiroMenuBarDisplayModeRaw: String? {

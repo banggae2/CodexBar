@@ -110,7 +110,7 @@ struct UsageBreakdownChartMenuView: View {
                 }
 
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)],
+                    columns: [GridItem(.adaptive(minimum: 126), alignment: .leading)],
                     alignment: .leading,
                     spacing: 6)
                 {
@@ -119,6 +119,11 @@ struct UsageBreakdownChartMenuView: View {
                             Circle()
                                 .fill(model.color(for: service))
                                 .frame(width: 7, height: 7)
+                            Image(systemName: model.iconName(for: service))
+                                .font(.caption2)
+                                .foregroundStyle(model.color(for: service))
+                                .frame(width: 12, alignment: .center)
+                                .accessibilityHidden(true)
                             Text(service)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -150,12 +155,16 @@ struct UsageBreakdownChartMenuView: View {
             }
             return self.serviceColors[idx]
         }
+
+        func iconName(for service: String) -> String {
+            UsageBreakdownChartMenuView.iconName(for: service)
+        }
     }
 
     private static let selectionBandColor = Color(nsColor: .labelColor).opacity(0.1)
 
     private static func makeModel(from breakdown: [OpenAIDashboardDailyBreakdown]) -> Model {
-        let sorted = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(from: breakdown)
+        let sorted = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(from: breakdown)
             .sorted { lhs, rhs in lhs.day < rhs.day }
 
         var points: [Point] = []
@@ -247,6 +256,25 @@ struct UsageBreakdownChartMenuView: View {
         ]
         let idx = abs(service.hashValue) % palette.count
         return palette[idx]
+    }
+
+    nonisolated static func iconName(for service: String) -> String {
+        let lower = service
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if lower == "cli" || lower.contains("terminal") {
+            return "terminal"
+        }
+        if lower == "desktop" || lower.contains("desktop") || lower.contains("app") {
+            return "macwindow"
+        }
+        if lower.contains("github") || lower.contains("code review") || lower.contains("review") {
+            return "checkmark.seal"
+        }
+        if lower.hasPrefix("skillusage:") || lower.contains("imagegen") || lower.contains("skill") {
+            return "sparkles"
+        }
+        return "square.grid.2x2"
     }
 
     private static func axisDates(fromSortedDays sortedDays: [OpenAIDashboardDailyBreakdown]) -> [Date] {

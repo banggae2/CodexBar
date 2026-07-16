@@ -40,8 +40,8 @@ struct OpenAIDashboardScrapeScriptTests {
 
         #expect(decoded.count == 1)
         #expect(decoded.first?.day == "2026-05-01")
-        #expect(decoded.first?.totalCreditsUsed == 30)
-        #expect((decoded.first?.services.map(\.service) ?? []) == ["Desktop", "CLI"])
+        #expect(decoded.first?.totalCreditsUsed == 35)
+        #expect((decoded.first?.services.map(\.service) ?? []) == ["Desktop", "CLI", "Imagegen"])
     }
 
     @Test
@@ -170,7 +170,7 @@ struct OpenAIDashboardScrapeScriptTests {
           dataKey: 'values',
           payload: {
             day: '2026-05-01',
-            values: { cli: 10, desktop: 20 }
+            values: { cli: 10, desktop: 20, "skillusage:imagegen": 5 }
           }
         };
         document.getElementById('model-chart')['__reactProps$test'] = {

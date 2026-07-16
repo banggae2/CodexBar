@@ -24,8 +24,10 @@ struct SettingsDefaultsState {
     var resetTimesShowAbsolute: Bool
     var providerChangelogLinksEnabled: Bool
     var menuBarShowsBrandIconWithPercent: Bool
+    var menuBarUsageDisplayStyleRaw: String?
     var menuBarDisplayModeRaw: String?
     var kiroMenuBarDisplayModeRaw: String?
+    var menuBarCompactHiddenProvidersRaw: [String]
     var historicalTrackingEnabled: Bool
     var multiAccountMenuLayoutRaw: String
     var menuBarMetricPreferencesRaw: [String: String]

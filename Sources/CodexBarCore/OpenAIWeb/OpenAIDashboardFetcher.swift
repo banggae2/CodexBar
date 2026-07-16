@@ -578,7 +578,7 @@ public struct OpenAIDashboardFetcher {
             do {
                 let decoder = JSONDecoder()
                 let decoded = try decoder.decode([OpenAIDashboardDailyBreakdown].self, from: Data(raw.utf8))
-                usageBreakdown = OpenAIDashboardDailyBreakdown.removingSkillUsageServices(from: decoded)
+                usageBreakdown = OpenAIDashboardDailyBreakdown.normalizedUsageBreakdown(from: decoded)
             } catch {
                 // Best-effort parse; ignore errors to avoid blocking other dashboard data.
                 usageBreakdown = []

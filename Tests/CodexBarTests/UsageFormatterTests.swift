@@ -179,6 +179,49 @@ struct UsageFormatterTests {
     }
 
     @Test
+    func `reset line uses localized previous Korean reset format`() {
+        CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            resetCodexBarLocalizationCacheForTesting()
+            configureUsageFormatterLocalizationProvider()
+            defer {
+                UsageFormatter.clearLocalizationProvider()
+                UsageFormatter.clearLocaleProvider()
+                resetCodexBarLocalizationCacheForTesting()
+            }
+
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(2 * 3600 + 15 * 60)
+            let window = RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: reset, resetDescription: nil)
+            let absolute = UsageFormatter.resetDescription(from: reset, now: now)
+
+            #expect(UsageFormatter.resetLine(for: window, style: .countdown, now: now) == "2시간 15분 후 재설정")
+            #expect(UsageFormatter.resetLine(for: window, style: .absolute, now: now) == "\(absolute) 재설정")
+            #expect(UsageFormatter.resetLine(for: window, style: .both, now: now) == "2시간 15분 후(\(absolute)) 재설정")
+        }
+    }
+
+    @Test
+    func `reset description uses localized tomorrow format`() throws {
+        try CodexBarLocalizationOverride.$appLanguage.withValue(AppLanguage.korean.rawValue) {
+            resetCodexBarLocalizationCacheForTesting()
+            configureUsageFormatterLocalizationProvider()
+            defer {
+                UsageFormatter.clearLocalizationProvider()
+                UsageFormatter.clearLocaleProvider()
+                resetCodexBarLocalizationCacheForTesting()
+            }
+
+            let calendar = Calendar(identifier: .gregorian)
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+            let text = UsageFormatter.resetDescription(from: tomorrow, now: now)
+
+            #expect(text.hasPrefix("내일 "))
+            #expect(!text.localizedCaseInsensitiveContains("tomorrow"))
+        }
+    }
+
+    @Test
     func `reset line falls back to provided description`() {
         let window = RateWindow(
             usedPercent: 0,

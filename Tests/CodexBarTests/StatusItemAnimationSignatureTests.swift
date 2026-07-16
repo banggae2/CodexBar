@@ -90,6 +90,7 @@ struct StatusItemAnimationSignatureTests {
         settings.mergeIcons = true
         settings.selectedMenuProvider = .codex
         settings.menuBarShowsBrandIconWithPercent = true
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.menuBarDisplayMode = .percent
         settings.usageBarsShowUsed = false
         settings.syntheticAPIToken = "synthetic-test-token"

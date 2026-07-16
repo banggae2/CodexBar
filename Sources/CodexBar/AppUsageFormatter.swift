@@ -12,26 +12,11 @@ enum AppUsageFormatter {
 
     static func resetCountdownDescription(from date: Date, now: Date = .init()) -> String {
         let seconds = max(0, date.timeIntervalSince(now))
-        if seconds < 1 { return L10n.string("Duration now") }
-
-        let totalMinutes = max(1, Int(ceil(seconds / 60.0)))
-        return self.durationDescription(minutes: totalMinutes)
+        return LocalizedDurationText.futureDescription(seconds: seconds)
     }
 
     static func durationDescription(minutes totalMinutes: Int) -> String {
-        let days = totalMinutes / (24 * 60)
-        let hours = (totalMinutes / 60) % 24
-        let minutes = totalMinutes % 60
-
-        if days > 0 {
-            if hours > 0 { return L10n.string("Duration in days hours format", days, hours) }
-            return L10n.string("Duration in days format", days)
-        }
-        if hours > 0 {
-            if minutes > 0 { return L10n.string("Duration in hours minutes format", hours, minutes) }
-            return L10n.string("Duration in hours format", hours)
-        }
-        return L10n.string("Duration in minutes format", totalMinutes)
+        LocalizedDurationText.futureDescription(minutes: totalMinutes)
     }
 
     static func resetDescription(from date: Date, now: Date = .init()) -> String {
