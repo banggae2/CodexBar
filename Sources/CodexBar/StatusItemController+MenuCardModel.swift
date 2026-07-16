@@ -2,12 +2,23 @@ import CodexBarCore
 import Foundation
 
 extension StatusItemController {
+    func makeMenuCardRefreshMonitor() -> MenuCardRefreshMonitor {
+        MenuCardRefreshMonitor(
+            resolveModel: { [weak self] provider in
+                self?.menuCardModel(for: provider)
+            },
+            isProviderRefreshActive: { [weak self] provider in
+                self?.store.refreshingProviders.contains(provider) == true
+            })
+    }
+
     func menuCardModel(
         for provider: UsageProvider?,
         snapshotOverride: UsageSnapshot? = nil,
         errorOverride: String? = nil,
         forceOverrideCard: Bool = false,
-        accountOverride: AccountInfo? = nil) -> UsageMenuCardView.Model?
+        accountOverride: AccountInfo? = nil,
+        planOverride: String? = nil) -> UsageMenuCardView.Model?
     {
         let target = provider ?? self.store.enabledProvidersForDisplay().first ?? .codex
         let metadata = self.store.metadata(for: target)
@@ -44,9 +55,11 @@ extension StatusItemController {
         let tokenError: String?
         if let codexProjection {
             credits = codexProjection.credits?.snapshot
-            creditsError = codexProjection.credits?.userFacingError
+            // Credits and dashboard collection are optional adjuncts. Keep their setup diagnostics in
+            // provider Settings so a signed-out browser does not dominate the glanceable menu card.
+            creditsError = nil
             dashboard = nil
-            dashboardError = codexProjection.userFacingErrors.dashboard
+            dashboardError = nil
             if surface == .liveCard {
                 tokenSnapshot = projectedTokenSnapshot ?? storedTokenSnapshot
                 tokenError = self.store.tokenError(for: target)
@@ -55,7 +68,7 @@ extension StatusItemController {
                 tokenError = nil
             }
         } else if ProviderDescriptorRegistry.descriptor(for: target).tokenCost.supportsTokenCost,
-                  snapshotOverride == nil
+                  surface == .liveCard
         {
             credits = nil
             creditsError = nil
@@ -72,7 +85,7 @@ extension StatusItemController {
             tokenError = nil
         }
 
-        let sourceLabel = snapshotOverride == nil ? self.store.sourceLabel(for: target) : nil
+        let sourceLabel = surface == .liveCard ? self.store.sourceLabel(for: target) : nil
         let kiloAutoMode = target == .kilo && self.settings.kiloUsageDataSource == .auto
         // Abacus uses primary for monthly credits (no secondary window)
         let paceWindow = target == .abacus ? snapshot?.primary : snapshot?.secondary
@@ -101,14 +114,26 @@ extension StatusItemController {
             tokenSnapshot: tokenSnapshot,
             tokenError: tokenError,
             account: fallbackAccount,
+            accountIsAuthoritative: accountOverride != nil,
+            planOverride: planOverride,
             isRefreshing: self.store.shouldShowRefreshingMenuCardIndicator(for: target),
+            // Provider-level errors can belong to a different account, so
+            // override cards never inherit them (same rule as the snapshot,
+            // token-cost, and source-label fallbacks above).
             lastError: errorOverride
                 ?? codexProjection?.userFacingErrors.usage
-                ?? self.store.userFacingError(for: target),
+                ?? (surface == .liveCard ? self.store.userFacingError(for: target) : nil),
+            limitsAvailability: self.store.knownLimitsAvailability(for: target),
             usageBarsShowUsed: self.settings.usageBarsShowUsed,
             resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
             tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: target),
+            tokenCostInlineDashboardEnabled: self.settings.costSummaryShowsInlineDashboard(for: target),
+            tokenCostMenuSectionEnabled: !UsageStore.tokenCostRequiresProviderSnapshot(target) &&
+                self.settings.costSummaryShowsSubmenu(for: target),
+            costComparisonPeriodsEnabled: self.settings.costComparisonPeriodsEnabled,
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
+            codexSparkUsageVisible: self.settings.codexSparkUsageVisible,
+            copilotBudgetExtrasEnabled: self.settings.copilotBudgetExtrasEnabled,
             sourceLabel: sourceLabel,
             kiloAutoMode: kiloAutoMode,
             hidePersonalInfo: self.settings.hidePersonalInfo,
@@ -118,6 +143,7 @@ extension StatusItemController {
                 .weekly: self.quotaWarningMarkerThresholds(provider: target, window: .weekly),
             ],
             workDaysPerWeek: self.settings.weeklyProgressWorkDays,
+            usesLiveSubtitle: surface == .liveCard,
             now: now)
         return UsageMenuCardView.Model.make(input)
     }

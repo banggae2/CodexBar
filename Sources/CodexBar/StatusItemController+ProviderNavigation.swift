@@ -9,6 +9,7 @@ extension StatusItemController {
         #if DEBUG
         guard !self.isReleasedForTesting else { return }
         #endif
+        self.advanceMenuInteraction(for: self.mergedMenu)
         self.invalidateMenus(refreshOpenMenus: refreshOpenMenus)
         if deferRendering {
             self.scheduleProviderSelectionUIRefresh()
@@ -21,7 +22,6 @@ extension StatusItemController {
         self.providerSelectionUIRefreshTask?.cancel()
         self.providerSelectionUIRefreshTask = Task { @MainActor [weak self] in
             await Task.yield()
-            try? await Task.sleep(for: .milliseconds(16))
             guard !Task.isCancelled, let self else { return }
             self.refreshProviderSelectionRendering()
             self.providerSelectionUIRefreshTask = nil
@@ -91,7 +91,9 @@ extension StatusItemController {
     }
 
     private func navigationResolvedProvider(enabledProviders: [UsageProvider]) -> UsageProvider? {
-        if enabledProviders.isEmpty { return .codex }
+        if enabledProviders.isEmpty {
+            return .codex
+        }
         if let selected = self.selectedMenuProvider, enabledProviders.contains(selected) {
             return selected
         }

@@ -1,78 +1,6 @@
 import CodexBarCore
 import Foundation
 
-final class ProviderRefreshTaskState: @unchecked Sendable {
-    let generation: UInt64
-
-    private let lock = NSLock()
-    private var task: Task<Void, Never>?
-    private var waiterIDs: Set<UInt64> = []
-    private var completed = false
-    private var retryRequired = false
-
-    init(generation: UInt64) {
-        self.generation = generation
-    }
-
-    func install(task: Task<Void, Never>) {
-        self.lock.withLock {
-            self.task = task
-        }
-    }
-
-    func addWaiter(_ waiterID: UInt64) -> Task<Void, Never>? {
-        self.lock.withLock {
-            self.waiterIDs.insert(waiterID)
-            return self.task
-        }
-    }
-
-    func cancelWaiter(_ waiterID: UInt64) {
-        let taskToCancel = self.lock.withLock {
-            guard self.waiterIDs.remove(waiterID) != nil else { return nil as Task<Void, Never>? }
-            return self.waiterIDs.isEmpty && !self.completed ? self.task : nil
-        }
-        taskToCancel?.cancel()
-    }
-
-    func finishWaiter(_ waiterID: UInt64) {
-        _ = self.lock.withLock {
-            self.waiterIDs.remove(waiterID)
-        }
-    }
-
-    func markCompleted(retryRequired: Bool) {
-        self.lock.withLock {
-            self.completed = true
-            self.retryRequired = retryRequired
-        }
-    }
-
-    func cancelTask() {
-        let task = self.lock.withLock {
-            self.completed ? nil : self.task
-        }
-        task?.cancel()
-    }
-
-    func waitForTaskCompletion() async {
-        let task = self.lock.withLock { self.task }
-        await task?.value
-    }
-
-    var isCompleted: Bool {
-        self.lock.withLock { self.completed }
-    }
-
-    var shouldRetry: Bool {
-        self.lock.withLock { self.retryRequired }
-    }
-
-    var canRemove: Bool {
-        self.lock.withLock { self.completed && self.waiterIDs.isEmpty }
-    }
-}
-
 enum ProviderStatusIndicator: String {
     case none
     case minor
@@ -104,6 +32,51 @@ struct ProviderStatus {
     let indicator: ProviderStatusIndicator
     let description: String?
     let updatedAt: Date?
+}
+
+/// A single component/service row on a statuspage.io-style status page
+/// (e.g. "Codex API", "CLI", "FedRAMP") with its current state. A row with non-empty
+/// `children` is a component group and renders as an expandable dropdown.
+struct ProviderStatusComponent: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let indicator: ProviderStatusIndicator
+    /// Raw provider status. The display label is localized when the row renders so changing
+    /// the app language does not require another network refresh.
+    let status: String
+    /// Child rows for a component group; empty for leaf components.
+    var children: [ProviderStatusComponent] = []
+
+    var isGroup: Bool {
+        !self.children.isEmpty
+    }
+
+    var statusLabel: String {
+        Self.label(forStatuspageStatus: self.status)
+    }
+
+    /// Maps a statuspage.io component `status` string to our indicator + display label.
+    static func indicator(forStatuspageStatus status: String) -> ProviderStatusIndicator {
+        switch status {
+        case "operational": .none
+        case "degraded_performance": .minor
+        case "partial_outage": .major
+        case "major_outage", "full_outage": .critical
+        case "under_maintenance": .maintenance
+        default: .unknown
+        }
+    }
+
+    static func label(forStatuspageStatus status: String) -> String {
+        switch status {
+        case "operational": L("status_operational")
+        case "degraded_performance": L("status_degraded")
+        case "partial_outage": L("status_partial_outage")
+        case "major_outage", "full_outage": L("status_major_outage")
+        case "under_maintenance": L("status_maintenance")
+        default: L("status_unknown")
+        }
+    }
 }
 
 /// Tracks consecutive failures so we can ignore a single flake when we previously had fresh data.
@@ -144,10 +117,35 @@ extension UsageStore {
         self.errors[provider] = error
     }
 
+    func _setKnownLimitsAvailabilityForTesting(
+        _ availability: UsageLimitsAvailability?,
+        provider: UsageProvider)
+    {
+        self.knownLimitsAvailabilityByProvider[provider] = availability
+    }
+
     func _setCodexHistoricalDatasetForTesting(_ dataset: CodexHistoricalDataset?, accountKey: String? = nil) {
         self.codexHistoricalDataset = dataset
         self.codexHistoricalDatasetAccountKey = accountKey
         self.historicalPaceRevision += 1
+    }
+
+    /// Cancels the one-shot persisted plan-utilization load and treats the
+    /// in-memory dictionary as "loaded" so callers can assign state directly
+    /// without racing the background decode. Used by test helpers that
+    /// intentionally seed history from scratch.
+    func _cancelPlanUtilizationHistoryLoadForTesting() {
+        self.planUtilizationHistoryLoadTask?.cancel()
+        self.planUtilizationHistoryLoadTask = nil
+        self.planUtilizationHistoryLoaded = true
+    }
+
+    /// Awaits the background plan-utilization load task to completion. Used
+    /// by tests that write history files to disk before constructing
+    /// `UsageStore` and then expect the dictionary to be populated by the
+    /// time assertions run.
+    func _waitForPlanUtilizationHistoryLoadForTesting() async {
+        await self.planUtilizationHistoryLoadTask?.value
     }
 }
 #endif

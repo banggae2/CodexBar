@@ -10,11 +10,16 @@ enum RefreshFrequency: String, CaseIterable, Identifiable {
     case fiveMinutes
     case fifteenMinutes
     case thirtyMinutes
+    /// Newest/most advanced option; kept last so the picker still lists the fixed intervals
+    /// in ascending cadence order before it.
+    case adaptive
 
     var id: String {
         self.rawValue
     }
 
+    /// nil for `.manual` (no timer) and `.adaptive` (delay is computed per tick by
+    /// `AdaptiveRefreshPolicy`, not a fixed interval).
     var seconds: TimeInterval? {
         switch self {
         case .manual: nil
@@ -23,6 +28,7 @@ enum RefreshFrequency: String, CaseIterable, Identifiable {
         case .fiveMinutes: 300
         case .fifteenMinutes: 900
         case .thirtyMinutes: 1800
+        case .adaptive: nil
         }
     }
 
@@ -34,6 +40,7 @@ enum RefreshFrequency: String, CaseIterable, Identifiable {
         case .fiveMinutes: L("refresh_5min")
         case .fifteenMinutes: L("refresh_15min")
         case .thirtyMinutes: L("refresh_30min")
+        case .adaptive: L("refresh_adaptive")
         }
     }
 }
@@ -42,9 +49,11 @@ enum MenuBarMetricPreference: String, CaseIterable, Identifiable {
     case automatic
     case primary
     case secondary
+    case primaryAndSecondary
     case tertiary
     case extraUsage
     case average
+    case monthlyPlan
 
     var id: String {
         self.rawValue
@@ -55,9 +64,11 @@ enum MenuBarMetricPreference: String, CaseIterable, Identifiable {
         case .automatic: L("metric_pref_automatic")
         case .primary: L("metric_pref_primary")
         case .secondary: L("metric_pref_secondary")
+        case .primaryAndSecondary: "\(L("metric_pref_primary")) + \(L("metric_pref_secondary"))"
         case .tertiary: L("metric_pref_tertiary")
         case .extraUsage: L("metric_pref_extra_usage")
         case .average: L("metric_pref_average")
+        case .monthlyPlan: L("metric_mistral_monthly_plan")
         }
     }
 }
@@ -79,15 +90,15 @@ enum KiroMenuBarDisplayMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .automatic: "Automatic"
-        case .hidden: "Hidden"
-        case .creditsLeft: "Credits left"
-        case .percentLeft: "Percent left"
-        case .creditsAndPercent: "Credits + percent"
-        case .usedAndTotal: "Used / total"
-        case .overageCreditsWhenExhausted: "Overage credits at zero"
-        case .overageCostWhenExhausted: "Overage cost at zero"
-        case .overageCreditsAndCostWhenExhausted: "Overage credits + cost at zero"
+        case .automatic: L("Automatic")
+        case .hidden: L("Hidden")
+        case .creditsLeft: L("Credits left")
+        case .percentLeft: L("Percent left")
+        case .creditsAndPercent: L("Credits + percent")
+        case .usedAndTotal: L("Used / total")
+        case .overageCreditsWhenExhausted: L("Overage credits at zero")
+        case .overageCostWhenExhausted: L("Overage cost at zero")
+        case .overageCreditsAndCostWhenExhausted: L("Overage credits + cost at zero")
         }
     }
 }
@@ -105,6 +116,40 @@ enum MultiAccountMenuLayout: String, CaseIterable, Identifiable {
         case .segmented: L("multi_account_layout_segmented")
         case .stacked: L("multi_account_layout_stacked")
         }
+    }
+}
+
+enum CostSummaryDisplayStyle: String, CaseIterable, Identifiable {
+    case inlineSummary
+    case costSubmenu
+    case both
+
+    var id: String {
+        self.rawValue
+    }
+
+    var label: String {
+        switch self {
+        case .inlineSummary: L("cost_summary_style_inline")
+        case .costSubmenu: L("cost_summary_style_submenu")
+        case .both: L("cost_summary_style_both")
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .inlineSummary: L("cost_summary_style_inline_help")
+        case .costSubmenu: L("cost_summary_style_submenu_help")
+        case .both: L("cost_summary_style_both_help")
+        }
+    }
+
+    var showsInlineSummary: Bool {
+        self != .costSubmenu
+    }
+
+    var showsCostSubmenu: Bool {
+        self != .inlineSummary
     }
 }
 
@@ -135,9 +180,15 @@ final class SettingsStore {
     static let productionCodexAccountReconciliationSnapshotCacheInterval: TimeInterval = 2
     static let isRunningTests: Bool = {
         let env = ProcessInfo.processInfo.environment
-        if env["XCTestConfigurationFilePath"] != nil { return true }
-        if env["TESTING_LIBRARY_VERSION"] != nil { return true }
-        if env["SWIFT_TESTING"] != nil { return true }
+        if env["XCTestConfigurationFilePath"] != nil {
+            return true
+        }
+        if env["TESTING_LIBRARY_VERSION"] != nil {
+            return true
+        }
+        if env["SWIFT_TESTING"] != nil {
+            return true
+        }
         return NSClassFromString("XCTestCase") != nil
     }()
 
@@ -147,6 +198,7 @@ final class SettingsStore {
 
     @ObservationIgnored let userDefaults: UserDefaults
     @ObservationIgnored let configStore: CodexBarConfigStore
+    @ObservationIgnored let antigravityOAuthCredentialsStore: AntigravityOAuthCredentialsStore
     @ObservationIgnored var config: CodexBarConfig
     @ObservationIgnored var configPersistTask: Task<Void, Never>?
     @ObservationIgnored var configLoading = false
@@ -163,13 +215,23 @@ final class SettingsStore {
     @ObservationIgnored var selectedMenuProviderRawStorage: String?
     var defaultsState: SettingsDefaultsState
     var configRevision: Int = 0
+    var backgroundWorkSettingsRevision: Int = 0
     var providerOrder: [UsageProvider] = []
     var providerEnablement: [UsageProvider: Bool] = [:]
+    @ObservationIgnored var providerEnablementRevisions: [UsageProvider: UInt64] = [:]
+    @ObservationIgnored var providerConfigRevisions: [UsageProvider: UInt64] = [:]
+    @ObservationIgnored var providerConfigFingerprints: [UsageProvider: Data] = [:]
 
     static func shouldBridgeSharedDefaults(for userDefaults: UserDefaults) -> Bool {
-        if !self.isRunningTests { return true }
-        if userDefaults === UserDefaults.standard { return true }
-        if let shared = sharedDefaults, userDefaults === shared { return true }
+        if !self.isRunningTests {
+            return true
+        }
+        if userDefaults === UserDefaults.standard {
+            return true
+        }
+        if let shared = sharedDefaults, userDefaults === shared {
+            return true
+        }
         return false
     }
 
@@ -204,7 +266,9 @@ final class SettingsStore {
             account: "amp-cookie",
             promptKind: .ampCookie),
         copilotTokenStore: any CopilotTokenStoring = KeychainCopilotTokenStore(),
-        tokenAccountStore: any ProviderTokenAccountStoring = FileTokenAccountStore())
+        tokenAccountStore: any ProviderTokenAccountStoring = FileTokenAccountStore(),
+        antigravityOAuthCredentialsStore: AntigravityOAuthCredentialsStore = AntigravityOAuthCredentialsStore(),
+        performInitialProviderDetection: Bool = !SettingsStore.isRunningTests)
     {
         let appGroupID = AppGroupSupport.currentGroupID()
         let appGroupMigration: AppGroupSupport.MigrationResult
@@ -256,6 +320,7 @@ final class SettingsStore {
             stores: legacyStores)
         self.userDefaults = userDefaults
         self.configStore = configStore
+        self.antigravityOAuthCredentialsStore = antigravityOAuthCredentialsStore
         self.config = config
         self.configLoading = true
         let defaultsState = Self.loadDefaultsState(userDefaults: userDefaults)
@@ -268,7 +333,9 @@ final class SettingsStore {
         userDefaults.removeObject(forKey: "showCodexUsage")
         userDefaults.removeObject(forKey: "showClaudeUsage")
         LaunchAtLoginManager.setEnabled(self.launchAtLogin)
-        self.runInitialProviderDetectionIfNeeded()
+        if performInitialProviderDetection {
+            self.runInitialProviderDetectionIfNeeded()
+        }
         self.ensureAlibabaProviderAutoEnabledIfNeeded()
         self.applyTokenCostDefaultIfNeeded()
         if self.claudeUsageDataSource != .cli {
@@ -295,6 +362,12 @@ final class SettingsStore {
 }
 
 extension SettingsStore {
+    private struct NotificationDefaults {
+        let statusChecksEnabled: Bool
+        let sessionQuotaNotificationsEnabled: Bool
+        let predictivePaceWarningNotificationsEnabled: Bool
+    }
+
     private static func scheduleAppGroupMigration() {
         Task.detached(priority: .utility) {
             let result = AppGroupSupport.migrateLegacyDataIfNeeded()
@@ -313,11 +386,16 @@ extension SettingsStore {
         hadExistingConfig: Bool) -> Bool
     {
         guard let codex = config.providerConfig(for: .codex) else { return false }
-        if let cookieSource = codex.cookieSource { return cookieSource.isEnabled }
-        if codex.sanitizedCookieHeader != nil { return true }
+        if let cookieSource = codex.cookieSource {
+            return cookieSource.isEnabled
+        }
+        if codex.sanitizedCookieHeader != nil {
+            return true
+        }
         return hadExistingConfig
     }
 
+    // swiftlint:disable:next function_body_length
     private static func loadDefaultsState(userDefaults: UserDefaults) -> SettingsDefaultsState {
         let refreshDefault = userDefaults.string(forKey: "refreshFrequency")
             .flatMap(RefreshFrequency.init(rawValue:))
@@ -325,22 +403,11 @@ extension SettingsStore {
         if Self.isRunningTests, refreshDefault == nil {
             userDefaults.set(refreshFrequency.rawValue, forKey: "refreshFrequency")
         }
+        let refreshAllProvidersOnMenuOpen = userDefaults.object(
+            forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
         let launchAtLogin = userDefaults.object(forKey: "launchAtLogin") as? Bool ?? false
         let debugMenuEnabled = userDefaults.object(forKey: "debugMenuEnabled") as? Bool ?? false
-        let debugDisableKeychainAccess: Bool = {
-            if let stored = userDefaults.object(forKey: "debugDisableKeychainAccess") as? Bool {
-                return stored
-            }
-            if Self.shouldBridgeSharedDefaults(for: userDefaults),
-               let shared = Self.sharedDefaults?.object(forKey: "debugDisableKeychainAccess") as? Bool
-            {
-                if Self.isRunningTests {
-                    userDefaults.set(shared, forKey: "debugDisableKeychainAccess")
-                }
-                return shared
-            }
-            return false
-        }()
+        let debugDisableKeychainAccess = Self.loadDebugDisableKeychainAccess(userDefaults: userDefaults)
         let debugFileLoggingEnabled = userDefaults.object(forKey: "debugFileLoggingEnabled") as? Bool ?? false
         let debugLogLevelRaw = userDefaults.string(forKey: "debugLogLevel") ?? CodexBarLog.Level.verbose.rawValue
         if Self.isRunningTests, userDefaults.string(forKey: "debugLogLevel") == nil {
@@ -348,12 +415,7 @@ extension SettingsStore {
         }
         let debugLoadingPatternRaw = userDefaults.string(forKey: "debugLoadingPattern")
         let debugKeepCLISessionsAlive = userDefaults.object(forKey: "debugKeepCLISessionsAlive") as? Bool ?? false
-        let statusChecksEnabled = userDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
-        let sessionQuotaDefault = userDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool
-        let sessionQuotaNotificationsEnabled = sessionQuotaDefault ?? true
-        if Self.isRunningTests, sessionQuotaDefault == nil {
-            userDefaults.set(true, forKey: "sessionQuotaNotificationsEnabled")
-        }
+        let notificationDefaults = Self.loadNotificationDefaults(userDefaults: userDefaults)
         let quotaWarnings = Self.loadQuotaWarningDefaults(userDefaults: userDefaults)
         let quotaWarningMarkersVisibleDefault = userDefaults.object(forKey: "quotaWarningMarkersVisible") as? Bool
         let quotaWarningMarkersVisible = quotaWarningMarkersVisibleDefault ?? true
@@ -369,33 +431,44 @@ extension SettingsStore {
             forKey: "menuBarShowsBrandIconWithPercent") as? Bool ?? true
         let menuBarUsageDisplayStyleRaw = userDefaults.string(forKey: "menuBarUsageDisplayStyle")
             ?? MenuBarUsageDisplayStyle.compactBars.rawValue
+        let menuBarHidesCritters = userDefaults.object(forKey: "menuBarHidesCritters") as? Bool ?? false
         let menuBarDisplayModeRaw = userDefaults.string(forKey: "menuBarDisplayMode")
             ?? MenuBarDisplayMode.percent.rawValue
+        let menuBarShowsResetTimeWhenExhausted = userDefaults.object(
+            forKey: "menuBarShowsResetTimeWhenExhausted") as? Bool ?? false
         let kiroMenuBarDisplayModeRaw = userDefaults.string(forKey: "kiroMenuBarDisplayMode")
             ?? KiroMenuBarDisplayMode.automatic.rawValue
         let menuBarCompactHiddenProvidersRaw = userDefaults.array(
             forKey: "menuBarCompactHiddenProviders") as? [String] ?? []
         let historicalTrackingEnabled = userDefaults.object(forKey: "historicalTrackingEnabled") as? Bool ?? false
-        let multiAccountMenuLayoutRaw = userDefaults.string(forKey: "multiAccountMenuLayout") ?? {
-            let legacyShowAll = userDefaults.object(forKey: "showAllTokenAccountsInMenu") as? Bool ?? false
-            return legacyShowAll ? MultiAccountMenuLayout.stacked.rawValue : MultiAccountMenuLayout.segmented.rawValue
-        }()
+        let multiAccountMenuLayoutRaw = Self.loadMultiAccountMenuLayoutRaw(userDefaults: userDefaults)
         let resolvedPreferences = Self.loadMenuBarMetricPreferences(userDefaults: userDefaults)
+        let copilotBudgetExtrasEnabled = userDefaults.object(forKey: "copilotBudgetExtrasEnabled") as? Bool ?? false
+        let copilotIconSecondaryWindowIDRaw = Self.loadCopilotIconSecondaryWindowIDRaw(userDefaults: userDefaults)
         let costUsageEnabled = userDefaults.object(forKey: "tokenCostUsageEnabled") as? Bool ?? false
         let rawCostUsageHistoryDays = userDefaults.object(forKey: "tokenCostUsageHistoryDays") as? Int ?? 30
         let costUsageHistoryDays = max(1, min(365, rawCostUsageHistoryDays))
+        let costComparisonPeriodsEnabled = userDefaults.object(
+            forKey: "costComparisonPeriodsEnabled") as? Bool ?? false
+        let costSummaryDisplayStyleRaw = Self.loadCostSummaryDisplayStyleRaw(
+            userDefaults: userDefaults,
+            costUsageEnabled: costUsageEnabled)
         let hidePersonalInfo = userDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         let randomBlinkEnabled = userDefaults.object(forKey: "randomBlinkEnabled") as? Bool ?? false
-        let confettiOnWeeklyLimitResetsEnabled = userDefaults.object(
-            forKey: "confettiOnWeeklyLimitResetsEnabled") as? Bool ?? false
+        let confettiOnReset = Self.loadConfettiOnResetDefaults(userDefaults: userDefaults)
         let menuBarShowsHighestUsage = userDefaults.object(forKey: "menuBarShowsHighestUsage") as? Bool ?? false
+        let claudeOAuthKeychainReadStrategyRaw = Self.loadClaudeOAuthKeychainReadStrategyRaw(userDefaults: userDefaults)
         let claudeOAuthKeychainPromptModeRaw = userDefaults.string(forKey: "claudeOAuthKeychainPromptMode")
-        let claudeOAuthKeychainReadStrategyRaw = userDefaults.string(forKey: "claudeOAuthKeychainReadStrategy")
         let claudeWebExtrasEnabledRaw = userDefaults.object(forKey: "claudeWebExtrasEnabled") as? Bool ?? false
         let creditsExtrasDefault = userDefaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool
         let showOptionalCreditsAndExtraUsage = creditsExtrasDefault ?? true
         if Self.isRunningTests, creditsExtrasDefault == nil {
             userDefaults.set(true, forKey: "showOptionalCreditsAndExtraUsage")
+        }
+        let codexSparkUsageVisibleDefault = userDefaults.object(forKey: "codexSparkUsageVisible") as? Bool
+        let codexSparkUsageVisible = codexSparkUsageVisibleDefault ?? true
+        if Self.isRunningTests, codexSparkUsageVisibleDefault == nil {
+            userDefaults.set(true, forKey: "codexSparkUsageVisible")
         }
         let openAIWebAccessDefault = userDefaults.object(forKey: "openAIWebAccessEnabled") as? Bool
         let openAIWebAccessEnabled = openAIWebAccessDefault ?? false
@@ -421,9 +494,14 @@ extension SettingsStore {
             forKey: "mergedOverviewSelectedProviders") as? [String] ?? []
         let selectedMenuProviderRaw = userDefaults.string(forKey: "selectedMenuProvider")
         let providerDetectionCompleted = userDefaults.object(forKey: "providerDetectionCompleted") as? Bool ?? false
+        let providersSortedAlphabetically = userDefaults.object(
+            forKey: "providersSortedAlphabetically") as? Bool ?? false
         let appLanguageRaw = userDefaults.string(forKey: "appLanguage")
+        let agentSessionsEnabled = userDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
+        let agentSessionsManualHosts = userDefaults.string(forKey: "agentSessionsManualHosts") ?? ""
         return SettingsDefaultsState(
             refreshFrequency: refreshFrequency,
+            refreshAllProvidersOnMenuOpen: refreshAllProvidersOnMenuOpen,
             launchAtLogin: launchAtLogin,
             debugMenuEnabled: debugMenuEnabled,
             debugDisableKeychainAccess: debugDisableKeychainAccess,
@@ -431,15 +509,17 @@ extension SettingsStore {
             debugLogLevelRaw: debugLogLevelRaw,
             debugLoadingPatternRaw: debugLoadingPatternRaw,
             debugKeepCLISessionsAlive: debugKeepCLISessionsAlive,
-            statusChecksEnabled: statusChecksEnabled,
-            sessionQuotaNotificationsEnabled: sessionQuotaNotificationsEnabled,
+            statusChecksEnabled: notificationDefaults.statusChecksEnabled,
+            sessionQuotaNotificationsEnabled: notificationDefaults.sessionQuotaNotificationsEnabled,
             quotaWarningNotificationsEnabled: quotaWarnings.notificationsEnabled,
+            predictivePaceWarningNotificationsEnabled: notificationDefaults.predictivePaceWarningNotificationsEnabled,
             quotaWarningThresholdsRaw: quotaWarnings.thresholdsRaw,
             quotaWarningSessionThresholdsRaw: quotaWarnings.sessionThresholdsRaw,
             quotaWarningWeeklyThresholdsRaw: quotaWarnings.weeklyThresholdsRaw,
             quotaWarningSessionEnabled: quotaWarnings.sessionEnabled,
             quotaWarningWeeklyEnabled: quotaWarnings.weeklyEnabled,
             quotaWarningSoundEnabled: quotaWarnings.soundEnabled,
+            quotaWarningOnScreenAlertEnabled: quotaWarnings.onScreenAlertEnabled,
             quotaWarningMarkersVisible: quotaWarningMarkersVisible,
             weeklyProgressWorkDays: weeklyProgressWorkDays,
             usageBarsShowUsed: usageBarsShowUsed,
@@ -447,22 +527,30 @@ extension SettingsStore {
             providerChangelogLinksEnabled: providerChangelogLinksEnabled,
             menuBarShowsBrandIconWithPercent: menuBarShowsBrandIconWithPercent,
             menuBarUsageDisplayStyleRaw: menuBarUsageDisplayStyleRaw,
+            menuBarHidesCritters: menuBarHidesCritters,
             menuBarDisplayModeRaw: menuBarDisplayModeRaw,
+            menuBarShowsResetTimeWhenExhausted: menuBarShowsResetTimeWhenExhausted,
             kiroMenuBarDisplayModeRaw: kiroMenuBarDisplayModeRaw,
             menuBarCompactHiddenProvidersRaw: menuBarCompactHiddenProvidersRaw,
             historicalTrackingEnabled: historicalTrackingEnabled,
             multiAccountMenuLayoutRaw: multiAccountMenuLayoutRaw,
             menuBarMetricPreferencesRaw: resolvedPreferences,
+            copilotBudgetExtrasEnabled: copilotBudgetExtrasEnabled,
+            copilotIconSecondaryWindowIDRaw: copilotIconSecondaryWindowIDRaw,
             costUsageEnabled: costUsageEnabled,
             costUsageHistoryDays: costUsageHistoryDays,
+            costComparisonPeriodsEnabled: costComparisonPeriodsEnabled,
+            costSummaryDisplayStyleRaw: costSummaryDisplayStyleRaw,
             hidePersonalInfo: hidePersonalInfo,
             randomBlinkEnabled: randomBlinkEnabled,
-            confettiOnWeeklyLimitResetsEnabled: confettiOnWeeklyLimitResetsEnabled,
+            confettiOnSessionLimitResetsEnabled: confettiOnReset.session,
+            confettiOnWeeklyLimitResetsEnabled: confettiOnReset.weekly,
             menuBarShowsHighestUsage: menuBarShowsHighestUsage,
             claudeOAuthKeychainPromptModeRaw: claudeOAuthKeychainPromptModeRaw,
             claudeOAuthKeychainReadStrategyRaw: claudeOAuthKeychainReadStrategyRaw,
             claudeWebExtrasEnabledRaw: claudeWebExtrasEnabledRaw,
             showOptionalCreditsAndExtraUsage: showOptionalCreditsAndExtraUsage,
+            codexSparkUsageVisible: codexSparkUsageVisible,
             openAIWebAccessEnabled: openAIWebAccessEnabled,
             openAIWebBatterySaverEnabled: openAIWebBatterySaverEnabled,
             providerStorageFootprintsEnabled: providerStorageFootprintsEnabled,
@@ -473,19 +561,117 @@ extension SettingsStore {
             mergedOverviewSelectedProvidersRaw: mergedOverviewSelectedProvidersRaw,
             selectedMenuProviderRaw: selectedMenuProviderRaw,
             providerDetectionCompleted: providerDetectionCompleted,
+            providersSortedAlphabetically: providersSortedAlphabetically,
             appLanguageRaw: appLanguageRaw,
-            terminalAppRaw: userDefaults.string(forKey: "terminalApp"))
+            terminalAppRaw: userDefaults.string(forKey: "terminalApp"),
+            agentSessionsEnabled: agentSessionsEnabled,
+            agentSessionsManualHosts: agentSessionsManualHosts)
+    }
+
+    private static func loadNotificationDefaults(userDefaults: UserDefaults) -> NotificationDefaults {
+        NotificationDefaults(
+            statusChecksEnabled: userDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true,
+            sessionQuotaNotificationsEnabled: self.loadSessionQuotaNotificationsDefault(userDefaults: userDefaults),
+            predictivePaceWarningNotificationsEnabled: userDefaults.object(
+                forKey: "predictivePaceWarningNotificationsEnabled") as? Bool ?? false)
+    }
+
+    private static func loadCostSummaryDisplayStyleRaw(
+        userDefaults: UserDefaults,
+        costUsageEnabled: Bool) -> String
+    {
+        if let storedCostSummaryDisplayStyle = userDefaults.string(forKey: "costSummaryDisplayStyle"),
+           CostSummaryDisplayStyle(rawValue: storedCostSummaryDisplayStyle) != nil
+        {
+            return storedCostSummaryDisplayStyle
+        }
+        let migratedStyle = CostSummaryDisplayStyle.both.rawValue
+        if costUsageEnabled || userDefaults.object(forKey: "costSummaryDisplayStyle") != nil {
+            userDefaults.set(migratedStyle, forKey: "costSummaryDisplayStyle")
+        }
+        return migratedStyle
+    }
+
+    private static func loadClaudeOAuthKeychainReadStrategyRaw(userDefaults: UserDefaults) -> String? {
+        let key = "claudeOAuthKeychainReadStrategy"
+        guard let raw = userDefaults.string(forKey: key) else { return nil }
+        guard let strategy = ClaudeOAuthKeychainReadStrategy(rawValue: raw) else { return raw }
+        guard strategy == .securityCLIExperimental else { return raw }
+
+        let migrated = ClaudeOAuthKeychainReadStrategy.securityFramework.rawValue
+        userDefaults.set(migrated, forKey: key)
+        let promptModeKey = "claudeOAuthKeychainPromptMode"
+        if userDefaults.string(forKey: promptModeKey) == nil {
+            userDefaults.set(ClaudeOAuthKeychainPromptMode.never.rawValue, forKey: promptModeKey)
+        }
+        return migrated
+    }
+
+    private static func loadConfettiOnResetDefaults(userDefaults: UserDefaults) -> (session: Bool, weekly: Bool) {
+        (
+            session: userDefaults.object(forKey: "confettiOnSessionLimitResetsEnabled") as? Bool ?? false,
+            weekly: userDefaults.object(forKey: "confettiOnWeeklyLimitResetsEnabled") as? Bool ?? false)
     }
 
     private static func loadMenuBarMetricPreferences(userDefaults: UserDefaults) -> [String: String] {
         let storedPreferences = userDefaults.dictionary(forKey: "menuBarMetricPreferences") as? [String: String] ?? [:]
-        if !storedPreferences.isEmpty {
-            return storedPreferences
+        let preferences: [String: String] = if !storedPreferences.isEmpty {
+            storedPreferences
+        } else if let menuBarMetricRaw = userDefaults.string(forKey: "menuBarMetricPreference"),
+                  let legacyPreference = MenuBarMetricPreference(rawValue: menuBarMetricRaw)
+        {
+            Dictionary(
+                uniqueKeysWithValues: UsageProvider.allCases.map { ($0.rawValue, legacyPreference.rawValue) })
+        } else {
+            [:]
         }
-        guard let menuBarMetricRaw = userDefaults.string(forKey: "menuBarMetricPreference"),
-              let legacyPreference = MenuBarMetricPreference(rawValue: menuBarMetricRaw)
-        else { return [:] }
-        return Dictionary(uniqueKeysWithValues: UsageProvider.allCases.map { ($0.rawValue, legacyPreference.rawValue) })
+
+        let migrationKey = "antigravityTwoPoolMetricPreferenceMigrated"
+        guard !userDefaults.bool(forKey: migrationKey) else { return preferences }
+
+        // Tagged builds through v0.35 used primary=Claude, secondary=Gemini Pro,
+        // and tertiary=Gemini Flash. Remap those meanings once to the two-pool schema.
+        var migrated = preferences
+        switch MenuBarMetricPreference(rawValue: migrated[UsageProvider.antigravity.rawValue] ?? "") {
+        case .primary:
+            migrated[UsageProvider.antigravity.rawValue] = MenuBarMetricPreference.secondary.rawValue
+        case .secondary:
+            migrated[UsageProvider.antigravity.rawValue] = MenuBarMetricPreference.primary.rawValue
+        case .tertiary:
+            migrated[UsageProvider.antigravity.rawValue] = MenuBarMetricPreference.primary.rawValue
+        case .automatic, .primaryAndSecondary, .extraUsage, .average, .monthlyPlan, .none:
+            break
+        }
+        userDefaults.set(migrated, forKey: "menuBarMetricPreferences")
+        userDefaults.set(true, forKey: migrationKey)
+        return migrated
+    }
+
+    private static func loadMultiAccountMenuLayoutRaw(userDefaults: UserDefaults) -> String {
+        if let layout = userDefaults.string(forKey: "multiAccountMenuLayout") {
+            return layout
+        }
+        let legacyShowAll = userDefaults.object(forKey: "showAllTokenAccountsInMenu") as? Bool ?? false
+        return legacyShowAll ? MultiAccountMenuLayout.stacked.rawValue : MultiAccountMenuLayout.segmented.rawValue
+    }
+
+    private static func loadCopilotIconSecondaryWindowIDRaw(userDefaults: UserDefaults) -> String {
+        userDefaults.string(forKey: "copilotIconSecondaryWindowID") ?? CopilotIconSecondaryWindowSelection.chat
+    }
+
+    private static func loadDebugDisableKeychainAccess(userDefaults: UserDefaults) -> Bool {
+        if let stored = userDefaults.object(forKey: "debugDisableKeychainAccess") as? Bool {
+            return stored
+        }
+        if Self.shouldBridgeSharedDefaults(for: userDefaults),
+           let shared = Self.sharedDefaults?.object(forKey: "debugDisableKeychainAccess") as? Bool
+        {
+            if Self.isRunningTests {
+                userDefaults.set(shared, forKey: "debugDisableKeychainAccess")
+            }
+            return shared
+        }
+        return false
     }
 
     private struct LoadedQuotaWarningDefaults {
@@ -496,6 +682,15 @@ extension SettingsStore {
         var sessionEnabled: Bool
         var weeklyEnabled: Bool
         var soundEnabled: Bool
+        var onScreenAlertEnabled: Bool
+    }
+
+    private static func loadSessionQuotaNotificationsDefault(userDefaults: UserDefaults) -> Bool {
+        let stored = userDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool
+        if Self.isRunningTests, stored == nil {
+            userDefaults.set(true, forKey: "sessionQuotaNotificationsEnabled")
+        }
+        return stored ?? true
     }
 
     private static func loadQuotaWarningDefaults(userDefaults: UserDefaults) -> LoadedQuotaWarningDefaults {
@@ -534,6 +729,12 @@ extension SettingsStore {
             userDefaults.set(true, forKey: "quotaWarningSoundEnabled")
         }
 
+        let onScreenAlertDefault = userDefaults.object(forKey: "quotaWarningOnScreenAlertEnabled") as? Bool
+        let onScreenAlertEnabled = onScreenAlertDefault ?? false
+        if Self.isRunningTests, onScreenAlertDefault == nil {
+            userDefaults.set(false, forKey: "quotaWarningOnScreenAlertEnabled")
+        }
+
         return LoadedQuotaWarningDefaults(
             notificationsEnabled: notificationsEnabled,
             thresholdsRaw: thresholdsRaw,
@@ -541,7 +742,8 @@ extension SettingsStore {
             weeklyThresholdsRaw: weeklyThresholdsRaw,
             sessionEnabled: sessionEnabled,
             weeklyEnabled: weeklyEnabled,
-            soundEnabled: soundEnabled)
+            soundEnabled: soundEnabled,
+            onScreenAlertEnabled: onScreenAlertEnabled)
     }
 }
 
@@ -559,9 +761,33 @@ extension SettingsStore {
         enablement.reserveCapacity(metadata.count)
         for provider in UsageProvider.allCases {
             let defaultEnabled = metadata[provider]?.defaultEnabled ?? false
-            enablement[provider] = config.providerConfig(for: provider)?.enabled ?? defaultEnabled
+            let providerConfig = config.providerConfig(for: provider) ?? ProviderConfig(id: provider)
+            let isEnabled = providerConfig.enabled ?? defaultEnabled
+            if let previous = self.providerEnablement[provider], previous != isEnabled {
+                self.providerEnablementRevisions[provider, default: 0] &+= 1
+            }
+            let fingerprint = Self.providerConfigFingerprint(providerConfig)
+            if let previous = self.providerConfigFingerprints[provider], previous != fingerprint {
+                self.providerConfigRevisions[provider, default: 0] &+= 1
+            }
+            self.providerConfigFingerprints[provider] = fingerprint
+            enablement[provider] = isEnabled
         }
         self.providerEnablement = enablement
+    }
+
+    private static func providerConfigFingerprint(_ config: ProviderConfig) -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(config)) ?? Data()
+    }
+
+    func providerEnablementRevision(for provider: UsageProvider) -> UInt64 {
+        self.providerEnablementRevisions[provider, default: 0]
+    }
+
+    func providerConfigRevision(for provider: UsageProvider) -> UInt64 {
+        self.providerConfigRevisions[provider, default: 0]
     }
 
     func orderedProviders() -> [UsageProvider] {

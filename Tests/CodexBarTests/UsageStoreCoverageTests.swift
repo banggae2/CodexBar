@@ -89,6 +89,35 @@ struct UsageStoreCoverageTests {
     }
 
     @Test
+    func `amp balances are rendered in provider cards`() {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-amp-credits")
+        let store = Self.makeUsageStore(settings: settings)
+        let now = Date()
+
+        store._setSnapshotForTesting(
+            UsageSnapshot(
+                primary: RateWindow(
+                    usedPercent: 51.4,
+                    windowMinutes: 1440,
+                    resetsAt: now.addingTimeInterval(12 * 3600),
+                    resetDescription: nil),
+                secondary: nil,
+                ampUsage: AmpUsageDetails(
+                    individualCredits: 25.64,
+                    workspaceBalances: [AmpWorkspaceBalance(name: "billing@example.test", remaining: 10.22)]),
+                updatedAt: now),
+            provider: .amp)
+        let model = ProvidersPane(settings: settings, store: store)._test_menuCardModel(for: .amp)
+
+        #expect(model.creditsText == "Individual credits: $25.64\nWorkspace billing@example.test: $10.22")
+        #expect(model.creditsRemaining == nil)
+
+        settings.hidePersonalInfo = true
+        let redactedModel = ProvidersPane(settings: settings, store: store)._test_menuCardModel(for: .amp)
+        #expect(redactedModel.creditsText == "Individual credits: $25.64\nWorkspace: $10.22")
+    }
+
+    @Test
     func `account info caches codex auth parsing until config revision changes`() throws {
         let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-account-info-cache")
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -125,6 +154,41 @@ struct UsageStoreCoverageTests {
 
         let store = Self.makeUsageStore(settings: settings)
         #expect(store.sourceLabel(for: .kilo) == "api")
+    }
+
+    @Test
+    func `clearing copilot budget extras syncs reset baseline`() {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-copilot-budget-clear")
+        let store = Self.makeUsageStore(settings: settings)
+        let live = Self.makeCopilotSnapshot(usedPercent: 20, extraRateWindows: [Self.makeCopilotBudgetWindow()])
+        let resetBaseline = Self.makeCopilotSnapshot(usedPercent: 10, extraRateWindows: nil)
+        store._setSnapshotForTesting(live, provider: .copilot)
+        store.lastKnownResetSnapshots[.copilot] = resetBaseline
+
+        store.clearCopilotBudgetExtras()
+
+        #expect(store.snapshot(for: .copilot)?.extraRateWindows == nil)
+        #expect(store.lastKnownResetSnapshots[.copilot]?.extraRateWindows == nil)
+        #expect(store.lastKnownResetSnapshots[.copilot]?.primary?.usedPercent == 20)
+    }
+
+    @Test
+    func `clearing copilot budget extras also clears stale reset baseline`() {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-copilot-budget-reset-clear")
+        let store = Self.makeUsageStore(settings: settings)
+        let live = Self.makeCopilotSnapshot(usedPercent: 20, extraRateWindows: nil)
+        let resetBaseline = Self.makeCopilotSnapshot(
+            usedPercent: 10,
+            extraRateWindows: [Self.makeCopilotBudgetWindow()])
+        store._setSnapshotForTesting(live, provider: .copilot)
+        store.lastKnownResetSnapshots[.copilot] = resetBaseline
+
+        store.clearCopilotBudgetExtras()
+
+        #expect(store.snapshot(for: .copilot)?.extraRateWindows == nil)
+        #expect(store.snapshot(for: .copilot)?.primary?.usedPercent == 20)
+        #expect(store.lastKnownResetSnapshots[.copilot]?.extraRateWindows == nil)
+        #expect(store.lastKnownResetSnapshots[.copilot]?.primary?.usedPercent == 10)
     }
 
     @Test
@@ -217,6 +281,9 @@ struct UsageStoreCoverageTests {
         store._setSnapshotForTesting(staleSnapshot, provider: .claude)
         store._setErrorForTesting("stale", provider: .claude)
         store.statuses[.claude] = ProviderStatus(indicator: .major, description: "Outage", updatedAt: Date())
+        store.statusComponents[.claude] = [
+            ProviderStatusComponent(id: "api", name: "API", indicator: .major, status: "major_outage"),
+        ]
 
         #expect(store.enabledProviders() == [.codex])
 
@@ -225,6 +292,7 @@ struct UsageStoreCoverageTests {
         #expect(store.snapshot(for: .claude) == nil)
         #expect(store.errors[.claude] == nil)
         #expect(store.statuses[.claude] == nil)
+        #expect(store.statusComponents(for: .claude).isEmpty)
     }
 
     @Test
@@ -315,6 +383,29 @@ struct UsageStoreCoverageTests {
         #expect(store.userFacingError(for: .synthetic) == SyntheticSettingsError.missingToken.errorDescription)
         #expect(store.unavailableMessage(for: .synthetic) == SyntheticSettingsError.missingToken.errorDescription)
     }
+}
+
+extension UsageStoreCoverageTests {
+    @Test
+    func `sub2api unavailable message identifies the missing setting`() throws {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-sub2api-unavailable-message")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+
+        let metadata = ProviderRegistry.shared.metadata
+        for provider in UsageProvider.allCases {
+            try settings.setProviderEnabled(
+                provider: provider,
+                metadata: #require(metadata[provider]),
+                enabled: provider == .sub2api)
+        }
+
+        let store = Self.makeUsageStore(settings: settings)
+        #expect(store.unavailableMessage(for: .sub2api) == Sub2APIUsageError.missingCredentials.errorDescription)
+
+        settings.sub2APIAPIKey = "group-key"
+        #expect(store.unavailableMessage(for: .sub2api) == Sub2APIUsageError.missingBaseURL.errorDescription)
+    }
 
     @Test
     func `refresh clears enabled but unavailable cached state`() async throws {
@@ -342,7 +433,12 @@ struct UsageStoreCoverageTests {
         store._setSnapshotForTesting(cachedSnapshot, provider: .synthetic)
         let account = ProviderTokenAccount(id: UUID(), label: "Account", token: "token", addedAt: 0, lastUsed: nil)
         store.accountSnapshots[.synthetic] = [
-            TokenAccountUsageSnapshot(account: account, snapshot: cachedSnapshot, error: nil, sourceLabel: "api"),
+            TokenAccountUsageSnapshot(
+                account: account,
+                snapshot: cachedSnapshot,
+                error: nil,
+                sourceLabel: "api",
+                cacheKey: store.tokenAccountSnapshotCacheKey(provider: .synthetic, account: account)),
         ]
         store._setTokenSnapshotForTesting(
             CostUsageTokenSnapshot(
@@ -386,6 +482,9 @@ struct UsageStoreCoverageTests {
         let store = Self.makeUsageStore(settings: settings)
         store._setErrorForTesting("stale", provider: .synthetic)
         store.statuses[.synthetic] = ProviderStatus(indicator: .major, description: "Outage", updatedAt: Date())
+        store.statusComponents[.synthetic] = [
+            ProviderStatusComponent(id: "api", name: "API", indicator: .major, status: "major_outage"),
+        ]
         store.tokenErrors[.synthetic] = "token stale"
 
         #expect(store.enabledProvidersForDisplay() == [.synthetic])
@@ -397,6 +496,7 @@ struct UsageStoreCoverageTests {
         #expect(store.errors[.synthetic] == nil)
         #expect(store.tokenErrors[.synthetic] == nil)
         #expect(store.statuses[.synthetic] == nil)
+        #expect(store.statusComponents(for: .synthetic).isEmpty)
         #expect(store.enabledProvidersForBackgroundWork().isEmpty)
     }
 
@@ -549,6 +649,112 @@ struct UsageStoreCoverageTests {
         settings.refreshFrequency = .oneMinute
         try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(refreshDidChange.get() == true)
+    }
+
+    @Test
+    func `background work settings observation ignores display only settings churn`() async throws {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-display-only-observation")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.mergeIcons = false
+        settings.randomBlinkEnabled = false
+        settings.usageBarsShowUsed = false
+        settings.showOptionalCreditsAndExtraUsage = false
+        try Self.enableOnly(.codex, settings: settings)
+
+        let store = Self.makeUsageStore(settings: settings)
+        let didChange = ObservationFlag()
+
+        withObservationTracking {
+            _ = store.backgroundWorkSettingsObservationToken
+        } onChange: {
+            didChange.set()
+        }
+
+        settings.usageBarsShowUsed = true
+        settings.mergeIcons = true
+        settings.randomBlinkEnabled = true
+        settings.codexSparkUsageVisible.toggle()
+        settings.debugLoadingPattern = .pulse
+        settings.setProviderOrder(Array(settings.orderedProviders().reversed()))
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(didChange.get() == false)
+
+        let refreshDidChange = ObservationFlag()
+        withObservationTracking {
+            _ = store.backgroundWorkSettingsObservationToken
+        } onChange: {
+            refreshDidChange.set()
+        }
+
+        settings.statusChecksEnabled = true
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(refreshDidChange.get() == true)
+
+        let layoutDidChange = ObservationFlag()
+        withObservationTracking {
+            _ = store.backgroundWorkSettingsObservationToken
+        } onChange: {
+            layoutDidChange.set()
+        }
+
+        settings.multiAccountMenuLayout = .stacked
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(layoutDidChange.get() == true)
+
+        let optionalUsageDidChange = ObservationFlag()
+        withObservationTracking {
+            _ = store.backgroundWorkSettingsObservationToken
+        } onChange: {
+            optionalUsageDidChange.set()
+        }
+
+        settings.showOptionalCreditsAndExtraUsage = true
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(optionalUsageDidChange.get() == true)
+    }
+
+    @Test
+    func `display only settings do not invoke provider refresh while background work is active`() async throws {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-display-only-no-provider-refresh")
+        settings.refreshFrequency = .manual
+        settings.statusChecksEnabled = false
+        settings.mergeIcons = false
+        settings.randomBlinkEnabled = false
+        settings.usageBarsShowUsed = false
+        try Self.enableOnly(.codex, settings: settings)
+
+        let store = Self.makeUsageStore(settings: settings)
+        var refreshedProviders: [UsageProvider] = []
+        store._test_providerRefreshOverride = { refreshedProviders.append($0) }
+        defer { store._test_providerRefreshOverride = nil }
+
+        func observeBackgroundSettingsForTest() {
+            withObservationTracking {
+                _ = store.backgroundWorkSettingsObservationToken
+            } onChange: {
+                Task { @MainActor in
+                    await store.refreshForSettingsChange()
+                }
+            }
+        }
+
+        observeBackgroundSettingsForTest()
+
+        settings.usageBarsShowUsed = true
+        settings.mergeIcons = true
+        settings.randomBlinkEnabled = true
+        settings.codexSparkUsageVisible.toggle()
+        settings.debugLoadingPattern = .pulse
+        settings.setProviderOrder(Array(settings.orderedProviders().reversed()))
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(refreshedProviders.isEmpty)
+
+        settings.codexUsageDataSource = .cli
+        for _ in 0..<20 where !refreshedProviders.contains(.codex) {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        #expect(refreshedProviders.contains(.codex))
     }
 
     @Test
@@ -707,6 +913,24 @@ struct UsageStoreCoverageTests {
             .replacingOccurrences(of: "/", with: "_")
     }
 
+    private static func makeCopilotSnapshot(
+        usedPercent: Double,
+        extraRateWindows: [NamedRateWindow]?) -> UsageSnapshot
+    {
+        UsageSnapshot(
+            primary: RateWindow(usedPercent: usedPercent, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+            secondary: nil,
+            extraRateWindows: extraRateWindows,
+            updatedAt: Date(timeIntervalSince1970: 1_780_358_400))
+    }
+
+    private static func makeCopilotBudgetWindow() -> NamedRateWindow {
+        NamedRateWindow(
+            id: "copilot-budget-test",
+            title: "Budget - Copilot",
+            window: RateWindow(usedPercent: 50, windowMinutes: nil, resetsAt: nil, resetDescription: nil))
+    }
+
     private static func enableOnly(_ enabledProvider: UsageProvider, settings: SettingsStore) throws {
         let metadata = ProviderRegistry.shared.metadata
         for provider in UsageProvider.allCases {
@@ -731,7 +955,9 @@ private actor StartupConnectivityRetrySleepGate {
     }
 
     func waitUntilSleeping() async {
-        if self.continuation != nil { return }
+        if self.continuation != nil {
+            return
+        }
         await withCheckedContinuation { continuation in
             self.waiters.append(continuation)
         }

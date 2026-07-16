@@ -92,7 +92,9 @@ struct LocalizationTests {
                 resetCodexBarLocalizationCacheForTesting()
             }
 
-            #expect(UsageFormatter.costEstimateHint(provider: .claude) == "로컬 Claude 로그를 API 요금으로 추정합니다. 토큰 합계에는 캐시 읽기/쓰기 토큰이 포함되며 Claude Code /status와 다를 수 있습니다.")
+            #expect(UsageFormatter
+                .costEstimateHint(provider: .claude) ==
+                "로컬 Claude 로그를 API 요금으로 추정합니다. 토큰 합계에는 캐시 읽기/쓰기 토큰이 포함되며 Claude Code /status와 다를 수 있습니다.")
         }
     }
 

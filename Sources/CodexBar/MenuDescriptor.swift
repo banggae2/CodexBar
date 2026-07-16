@@ -24,13 +24,22 @@ struct MenuDescriptor {
     enum Entry {
         case text(String, TextStyle)
         case action(String, MenuAction)
+        case unavailable(String, String?)
         case submenu(String, String?, [SubmenuItem])
         case divider
+
+        var isActionable: Bool {
+            switch self {
+            case .action, .submenu, .unavailable: true
+            case .text, .divider: false
+            }
+        }
     }
 
     enum MenuActionSystemImage: String {
+        case installUpdate = "arrow.down.circle"
         case refresh = "arrow.clockwise"
-        case dashboard = "chart.bar"
+        case dashboard = "chart.xyaxis.line"
         case statusPage = "waveform.path.ecg"
         case changelog = "list.bullet.rectangle"
         case addAccount = "plus"
@@ -67,6 +76,7 @@ struct MenuDescriptor {
         case about
         case quit
         case copyError(String)
+        case focusAgentSession(AgentSession, remoteHost: String?)
     }
 
     var sections: [Section]
@@ -79,7 +89,11 @@ struct MenuDescriptor {
         managedCodexAccountCoordinator: ManagedCodexAccountCoordinator? = nil,
         codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator? = nil,
         updateReady: Bool,
-        includeContextualActions: Bool = true) -> MenuDescriptor
+        includeContextualActions: Bool = true,
+        agentSessionsEnabled: Bool = false,
+        localAgentSessions: [AgentSession] = [],
+        remoteAgentHosts: [RemoteSessionHostResult] = [],
+        now: Date = Date()) -> MenuDescriptor
     {
         var sections: [Section] = []
 
@@ -128,9 +142,69 @@ struct MenuDescriptor {
                 sections.append(actions)
             }
         }
+        if agentSessionsEnabled {
+            sections.append(Self.agentSessionsSection(
+                localSessions: localAgentSessions,
+                remoteHosts: remoteAgentHosts,
+                now: now))
+        }
         sections.append(Self.metaSection(updateReady: updateReady))
 
         return MenuDescriptor(sections: sections)
+    }
+
+    static func agentSessionsSection(
+        localSessions: [AgentSession],
+        remoteHosts: [RemoteSessionHostResult],
+        now: Date = Date()) -> Section
+    {
+        let totalCount = localSessions.count + remoteHosts.reduce(0) { $0 + $1.sessions.count }
+        var entries: [Entry] = [.text("Agent Sessions (\(totalCount))", .headline)]
+
+        for session in localSessions {
+            entries.append(.action(
+                self.agentSessionRowTitle(session, now: now),
+                .focusAgentSession(session, remoteHost: nil)))
+        }
+        for remoteHost in remoteHosts {
+            if let error = remoteHost.error {
+                entries.append(.unavailable("\(remoteHost.host) — unreachable", error))
+                continue
+            }
+            entries.append(.text("\(remoteHost.host) — \(remoteHost.sessions.count)", .secondary))
+            for session in remoteHost.sessions {
+                entries.append(.action(
+                    self.agentSessionRowTitle(session, now: now),
+                    .focusAgentSession(session, remoteHost: remoteHost.host)))
+            }
+        }
+        if totalCount == 0 {
+            entries.append(.unavailable("No agent sessions found", nil))
+        }
+        return Section(entries: entries)
+    }
+
+    private static func agentSessionRowTitle(_ session: AgentSession, now: Date) -> String {
+        let state = session.state == .active ? "●" : "○"
+        let providerGlyph = session.provider == .codex ? "⌘" : "✦"
+        let project = session.projectName ?? "Unknown project"
+        return "\(state) \(providerGlyph) \(project) — \(session.provider.rawValue) · " +
+            "\(session.source.rawValue) · \(self.agentSessionAge(session, now: now))"
+    }
+
+    private static func agentSessionAge(_ session: AgentSession, now: Date) -> String {
+        guard let activity = session.lastActivityAt ?? session.startedAt else { return "now" }
+        let seconds = max(0, Int(now.timeIntervalSince(activity)))
+        if seconds < 60 {
+            return "\(seconds)s"
+        }
+        if seconds < 3600 {
+            return "\(seconds / 60)m"
+        }
+        if seconds < 86400 {
+            return "\(seconds / 3600)h"
+        }
+        return "\(seconds / 86400)d"
     }
 
     private static func usageSection(
@@ -141,7 +215,9 @@ struct MenuDescriptor {
         let meta = store.metadata(for: provider)
         var entries: [Entry] = []
         let headlineText: String = {
-            if let ver = Self.versionNumber(for: provider, store: store) { return "\(meta.displayName) \(ver)" }
+            if let ver = Self.versionNumber(for: provider, store: store) {
+                return "\(meta.displayName) \(ver)"
+            }
             return meta.displayName
         }()
         entries.append(.text(headlineText, .headline))
@@ -150,10 +226,11 @@ struct MenuDescriptor {
             let resetStyle = settings.resetTimeDisplayStyle
             let labels = Self.rateWindowLabels(provider: provider, metadata: meta, snapshot: snap)
             if let primary = snap.primary {
-                let primaryWindow = if provider == .warp || provider == .kilo || provider == .mimo || provider ==
-                    .abacus ||
-                    provider == .deepseek || provider == .azureopenai
-                {
+                let primaryDetail = primary.resetDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let primaryDescriptionIsDetail = provider == .warp || provider == .kilo || provider == .abacus ||
+                    provider == .deepseek || provider == .azureopenai || provider == .mimo || provider == .qoder ||
+                    provider == .sub2api
+                let primaryWindow = if primaryDescriptionIsDetail {
                     // Some providers use resetDescription for non-reset detail
                     // (e.g., "Unlimited", "X/Y credits"). Avoid rendering it as a "Resets ..." line.
                     RateWindow(
@@ -170,12 +247,11 @@ struct MenuDescriptor {
                     window: primaryWindow,
                     resetStyle: resetStyle,
                     showUsed: settings.usageBarsShowUsed)
-                if provider == .warp || provider == .kilo || provider == .mimo || provider == .abacus || provider ==
-                    .deepseek || provider == .azureopenai,
-                    let detail = primary.resetDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
-                    !detail.isEmpty
+                if primaryDescriptionIsDetail,
+                   let primaryDetail,
+                   !primaryDetail.isEmpty
                 {
-                    entries.append(.text(detail, .secondary))
+                    entries.append(.text(primaryDetail, .secondary))
                 }
                 if provider == .crof,
                    primary.resetsAt != nil,
@@ -187,7 +263,7 @@ struct MenuDescriptor {
                 if provider == .abacus,
                    let pace = store.weeklyPace(provider: provider, window: primary)
                 {
-                    let paceSummary = UsagePaceText.weeklySummary(pace: pace)
+                    let paceSummary = UsagePaceText.weeklySummary(provider: provider, pace: pace)
                     entries.append(.text(paceSummary, .secondary))
                 }
                 if let paceSummary = UsagePaceText.sessionSummary(provider: provider, window: primary) {
@@ -196,7 +272,8 @@ struct MenuDescriptor {
             }
             if let weekly = snap.secondary {
                 let weeklyResetOverride: String? = {
-                    guard provider == .warp || provider == .kilo || provider == .perplexity || provider == .crof
+                    guard provider == .warp || provider == .kilo || provider == .perplexity || provider == .crof ||
+                        provider == .sub2api
                     else { return nil }
                     let detail = weekly.resetDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard let detail, !detail.isEmpty else { return nil }
@@ -220,13 +297,13 @@ struct MenuDescriptor {
                     entries.append(.text(detail, .secondary))
                 }
                 if let pace = store.weeklyPace(provider: provider, window: weekly) {
-                    let paceSummary = UsagePaceText.weeklySummary(pace: pace)
+                    let paceSummary = UsagePaceText.weeklySummary(provider: provider, pace: pace)
                     entries.append(.text(paceSummary, .secondary))
                 }
             }
             if labels.showsTertiary, let opus = snap.tertiary {
                 // Perplexity purchased credits don't reset; show the balance as plain text.
-                let opusResetOverride: String? = provider == .perplexity
+                let opusResetOverride: String? = provider == .perplexity || provider == .sub2api
                     ? opus.resetDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
                     : nil
                 Self.appendRateWindow(
@@ -238,7 +315,17 @@ struct MenuDescriptor {
                     resetOverride: opusResetOverride)
             }
 
-            Self.appendProviderUsageSummaries(entries: &entries, snapshot: snap)
+            Self.appendProviderUsageSummaries(
+                entries: &entries,
+                snapshot: snap,
+                showOptionalUsage: settings.showOptionalCreditsAndExtraUsage)
+            if snap.rateLimitsUnavailable(for: provider) {
+                entries.append(.text(L("Limits not available"), .secondary))
+            }
+        } else if !store.isStale(provider: provider),
+                  store.knownLimitsAvailability(for: provider)?.isUnavailable == true
+        {
+            entries.append(.text(L("Limits not available"), .secondary))
         } else {
             entries.append(.text(L("No usage yet"), .secondary))
         }
@@ -257,7 +344,8 @@ struct MenuDescriptor {
 
     private static func appendProviderUsageSummaries(
         entries: inout [Entry],
-        snapshot: UsageSnapshot)
+        snapshot: UsageSnapshot,
+        showOptionalUsage: Bool)
     {
         if let cost = snapshot.providerCost {
             if cost.currencyCode == "Quota" {
@@ -275,109 +363,42 @@ struct MenuDescriptor {
         if let openRouterUsage = snapshot.openRouterUsage {
             Self.appendOpenRouterUsageSummary(entries: &entries, usage: openRouterUsage)
         }
+        if let clawRouterUsage = snapshot.clawRouterUsage {
+            entries.append(.text(
+                "\(UsageFormatter.tokenCountString(clawRouterUsage.requestCount)) \(L("requests")) · " +
+                    "\(UsageFormatter.tokenCountString(clawRouterUsage.totalTokens)) \(L("tokens"))",
+                .secondary))
+            if !clawRouterUsage.providers.isEmpty {
+                let mix = clawRouterUsage.providers.prefix(5)
+                    .map { "\($0.provider): \(UsageFormatter.tokenCountString($0.requestCount))" }
+                    .joined(separator: " · ")
+                entries.append(.text("Routed providers: \(mix)", .secondary))
+            }
+        }
+        if let wayfinderUsage = snapshot.wayfinderUsage {
+            Self.appendWayfinderUsageSummary(entries: &entries, usage: wayfinderUsage)
+        }
+        if let poeUsage = snapshot.poeUsage, !poeUsage.daily.isEmpty {
+            Self.appendPoeUsageSummary(entries: &entries, usage: poeUsage)
+        }
         if let mistralUsage = snapshot.mistralUsage, !mistralUsage.daily.isEmpty {
             Self.appendMistralUsageSummary(entries: &entries, usage: mistralUsage)
         }
-    }
-
-    private static func appendOpenAIAPIUsageSummary(
-        entries: inout [Entry],
-        usage: OpenAIAPIUsageSnapshot)
-    {
-        let today = usage.latestDay
-        let last7 = usage.last7Days
-        let last30 = usage.last30Days
-        let historyLabel = usage.historyWindowLabel
-
-        entries.append(.text(
-            "\(L("Today")): \(UsageFormatter.usdString(today.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(today.totalTokens)) \(L("tokens"))",
-            .secondary))
-        entries.append(.text(
-            "7d: \(UsageFormatter.usdString(last7.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(last7.requests)) \(L("requests"))",
-            .secondary))
-        entries.append(.text(
-            "\(historyLabel): \(UsageFormatter.usdString(last30.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(last30.requests)) \(L("requests"))",
-            .secondary))
-        if let topModel = usage.topModels.first?.name {
-            entries.append(.text("\(L("Top model")): \(topModel)", .secondary))
+        if let mimoUsage = snapshot.mimoUsage {
+            entries.append(.text("\(L("Balance")): \(mimoUsage.balanceDetail)", .primary))
         }
-    }
-
-    private static func appendClaudeAdminAPIUsageSummary(
-        entries: inout [Entry],
-        usage: ClaudeAdminAPIUsageSnapshot)
-    {
-        let today = usage.latestDay
-        let last7 = usage.last7Days
-        let last30 = usage.last30Days
-
-        entries.append(.text(
-            "\(L("Today")): \(UsageFormatter.usdString(today.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(today.totalTokens)) \(L("tokens"))",
-            .secondary))
-        entries.append(.text(
-            "7d: \(UsageFormatter.usdString(last7.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(last7.totalTokens)) \(L("tokens"))",
-            .secondary))
-        entries.append(.text(
-            "30d: \(UsageFormatter.usdString(last30.costUSD)) · " +
-                "\(UsageFormatter.tokenCountString(last30.totalTokens)) \(L("tokens"))",
-            .secondary))
-        if let topModel = usage.topModels.first?.name {
-            entries.append(.text("\(L("Top model")): \(topModel)", .secondary))
-        }
-    }
-
-    private static func appendOpenRouterUsageSummary(
-        entries: inout [Entry],
-        usage: OpenRouterUsageSnapshot)
-    {
-        if let daily = usage.keyUsageDaily {
-            entries.append(.text("\(L("Today")): \(UsageFormatter.usdString(daily))", .secondary))
-        }
-        if let weekly = usage.keyUsageWeekly {
-            entries.append(.text("\(L("Week")): \(UsageFormatter.usdString(weekly))", .secondary))
-        }
-        if let monthly = usage.keyUsageMonthly {
-            entries.append(.text("\(L("Month")): \(UsageFormatter.usdString(monthly))", .secondary))
-        }
-    }
-
-    private static func appendMistralUsageSummary(
-        entries: inout [Entry],
-        usage: MistralUsageSnapshot)
-    {
-        let latest = usage.daily.last
-        if let latest {
-            entries.append(.text(
-                "\(L("Latest")): \(usage.currencySymbol)\(String(format: "%.4f", max(0, latest.cost))) · " +
-                    "\(UsageFormatter.tokenCountString(latest.totalTokens)) \(L("tokens"))",
-                .secondary))
-        }
-        let totalTokens = usage.totalInputTokens + usage.totalCachedTokens + usage.totalOutputTokens
-        entries.append(.text(
-            "\(L("Month")): \(usage.currencySymbol)\(String(format: "%.4f", max(0, usage.totalCost))) · " +
-                "\(UsageFormatter.tokenCountString(totalTokens)) \(L("tokens"))",
-            .secondary))
-        if let top = Self.topMistralModel(from: usage.daily) {
-            entries.append(.text("\(L("Top model")): \(top)", .secondary))
-        }
-    }
-
-    private static func topMistralModel(from entries: [MistralDailyUsageBucket]) -> String? {
-        var tokens: [String: Int] = [:]
-        for entry in entries {
-            for model in entry.models {
-                tokens[model.name, default: 0] += model.totalTokens
+        // Sakana pay-as-you-go is optional data gated by "Show optional credits and extra usage".
+        // Gate the render on the setting too, not just the fetch: toggling the setting off only
+        // rebuilds the menu, it does not immediately refetch, so a previously-populated
+        // sakanaPayAsYouGo would otherwise linger in the cached snapshot until the next refresh.
+        if showOptionalUsage, let sakanaPayAsYouGo = snapshot.sakanaPayAsYouGo {
+            entries.append(.text("\(L("Balance")): \(sakanaPayAsYouGo.balanceDetail)", .primary))
+            if let periodUsageTotal = sakanaPayAsYouGo.periodUsageTotal {
+                entries.append(.text(
+                    "\(L("Usage")): \(UsageFormatter.usdString(periodUsageTotal))",
+                    .secondary))
             }
         }
-        return tokens.max {
-            if $0.value == $1.value { return $0.key > $1.key }
-            return $0.value < $1.value
-        }?.key
     }
 
     private static func accountSection(
@@ -412,7 +433,7 @@ struct MenuDescriptor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let redactedEmail = PersonalInfoRedactor.redactEmail(emailText, isEnabled: hidePersonalInfo)
 
-        if let emailText, !emailText.isEmpty {
+        if let emailText, !emailText.isEmpty, !redactedEmail.isEmpty {
             entries.append(.text("\(L("Account")): \(redactedEmail)", .secondary))
         }
         if provider == .kiro {
@@ -437,8 +458,12 @@ struct MenuDescriptor {
             for detail in kiloLogin.details {
                 entries.append(.text("\(L("Activity")): \(detail)", .secondary))
             }
+        } else if provider == .crossmodel {
+            if let loginMethodText, !loginMethodText.isEmpty {
+                entries.append(.text("\(L("Auth")): \(loginMethodText)", .secondary))
+            }
         } else if let loginMethodText, !loginMethodText.isEmpty {
-            if provider == .openrouter || provider == .mimo,
+            if provider == .openrouter || provider == .mimo || provider == .poe,
                loginMethodText.localizedCaseInsensitiveContains("balance:")
             {
                 let balanceValue = loginMethodText
@@ -461,7 +486,9 @@ struct MenuDescriptor {
         if metadata.usesAccountFallback {
             if emailText?.isEmpty ?? true, let fallbackEmail = fallback.email, !fallbackEmail.isEmpty {
                 let redacted = PersonalInfoRedactor.redactEmail(fallbackEmail, isEnabled: hidePersonalInfo)
-                entries.append(.text("\(L("Account")): \(redacted)", .secondary))
+                if !redacted.isEmpty {
+                    entries.append(.text("\(L("Account")): \(redacted)", .secondary))
+                }
             }
             if loginMethodText?.isEmpty ?? true, let fallbackPlan = fallback.plan, !fallbackPlan.isEmpty {
                 entries.append(
@@ -605,8 +632,12 @@ struct MenuDescriptor {
     }
 
     private static func switchAccountTarget(for provider: UsageProvider?, store: UsageStore) -> MenuAction {
-        if let provider { return .switchAccount(provider) }
-        if let enabled = store.enabledProviders().first { return .switchAccount(enabled) }
+        if let provider {
+            return .switchAccount(provider)
+        }
+        if let enabled = store.enabledProviders().first {
+            return .switchAccount(enabled)
+        }
         return .switchAccount(.codex)
     }
 
@@ -635,9 +666,15 @@ struct MenuDescriptor {
         if provider == .factory, snapshot.tertiary != nil {
             return ("5-hour", L("Weekly"), L("Monthly"), true)
         }
-        let primaryLabel = provider == .grok
-            ? GrokProviderDescriptor.primaryLabel(window: snapshot.primary) ?? metadata.sessionLabel
-            : metadata.sessionLabel
+        let primaryLabel = if provider == .grok {
+            GrokProviderDescriptor.primaryLabel(window: snapshot.primary) ?? metadata.sessionLabel
+        } else if provider == .doubao {
+            DoubaoProviderDescriptor.primaryLabel(window: snapshot.primary) ?? metadata.sessionLabel
+        } else if provider == .sub2api {
+            Sub2APIProviderDescriptor.primaryLabel(details: snapshot.sub2APIUsage) ?? metadata.sessionLabel
+        } else {
+            metadata.sessionLabel
+        }
         return (
             L(primaryLabel),
             L(metadata.weeklyLabel),
@@ -692,8 +729,10 @@ private enum AccountFormatter {
 extension MenuDescriptor.MenuAction {
     var systemImageName: String? {
         switch self {
-        case .installUpdate, .settings, .about, .quit:
-            nil
+        case .installUpdate: MenuDescriptor.MenuActionSystemImage.installUpdate.rawValue
+        case .settings: MenuDescriptor.MenuActionSystemImage.settings.rawValue
+        case .about: MenuDescriptor.MenuActionSystemImage.about.rawValue
+        case .quit: MenuDescriptor.MenuActionSystemImage.quit.rawValue
         case .refresh: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
         case .refreshAugmentSession: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
         case .dashboard: MenuDescriptor.MenuActionSystemImage.dashboard.rawValue
@@ -706,6 +745,8 @@ extension MenuDescriptor.MenuAction {
         case .openTerminal: MenuDescriptor.MenuActionSystemImage.openTerminal.rawValue
         case .loginToProvider: MenuDescriptor.MenuActionSystemImage.loginToProvider.rawValue
         case .copyError: MenuDescriptor.MenuActionSystemImage.copyError.rawValue
+        case .focusAgentSession:
+            nil
         }
     }
 }

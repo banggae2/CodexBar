@@ -53,7 +53,7 @@ struct StatusMenuOverviewScrollTests {
     }
 
     @Test
-    func `scroll steps move highlight and respect direction`() throws {
+    func `coarse wheel steps move highlight and respect direction`() throws {
         let controller = self.makeController(suiteName: "OverviewScroll-Direction")
         defer { controller.releaseStatusItemsForTesting() }
         let menu = self.makeOverviewMenu()
@@ -61,12 +61,12 @@ struct StatusMenuOverviewScrollTests {
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let scrollUp = try #require(self.makeScrollEvent(deltaY: 30, precise: true))
+        let scrollUp = try #require(self.makeScrollEvent(deltaY: 1, precise: false))
         #expect(controller.handleOverviewScrollWheel(scrollUp, menu: menu))
         #expect(steps == [.up])
 
         steps = []
-        let scrollDown = try #require(self.makeScrollEvent(deltaY: -30, precise: true))
+        let scrollDown = try #require(self.makeScrollEvent(deltaY: -1, precise: false))
         #expect(controller.handleOverviewScrollWheel(scrollDown, menu: menu))
         #expect(steps == [.down])
     }
@@ -97,41 +97,33 @@ struct StatusMenuOverviewScrollTests {
     }
 
     @Test
-    func `small precise deltas accumulate before stepping`() throws {
-        let controller = self.makeController(suiteName: "OverviewScroll-Accumulate")
+    func `precise trackpad scrolling is passed through to native menu scrolling`() throws {
+        let controller = self.makeController(suiteName: "OverviewScroll-Precise")
         defer { controller.releaseStatusItemsForTesting() }
         let menu = self.makeOverviewMenu()
 
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let smallScroll = try #require(self.makeScrollEvent(deltaY: 10, precise: true))
-        #expect(controller.handleOverviewScrollWheel(smallScroll, menu: menu))
+        let scroll = try #require(self.makeScrollEvent(deltaY: 30, precise: true))
+        #expect(!controller.handleOverviewScrollWheel(scroll, menu: menu))
         #expect(steps.isEmpty)
-        #expect(controller.handleOverviewScrollWheel(smallScroll, menu: menu))
-        #expect(steps.isEmpty)
-        #expect(controller.handleOverviewScrollWheel(smallScroll, menu: menu))
-        #expect(steps == [.up])
     }
 
     @Test
-    func `direction change resets accumulated distance`() throws {
-        let controller = self.makeController(suiteName: "OverviewScroll-Flip")
+    func `precise trackpad scrolling clears wheel accumulation`() throws {
+        let controller = self.makeController(suiteName: "OverviewScroll-PreciseReset")
         defer { controller.releaseStatusItemsForTesting() }
         let menu = self.makeOverviewMenu()
 
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let upBelowThreshold = try #require(self.makeScrollEvent(deltaY: 20, precise: true))
-        #expect(controller.handleOverviewScrollWheel(upBelowThreshold, menu: menu))
+        controller.overviewScrollAccumulatedDelta = 0.5
+        let scroll = try #require(self.makeScrollEvent(deltaY: 30, precise: true))
+        #expect(!controller.handleOverviewScrollWheel(scroll, menu: menu))
         #expect(steps.isEmpty)
-
-        let downBelowThreshold = try #require(self.makeScrollEvent(deltaY: -20, precise: true))
-        #expect(controller.handleOverviewScrollWheel(downBelowThreshold, menu: menu))
-        #expect(steps.isEmpty)
-        #expect(controller.handleOverviewScrollWheel(downBelowThreshold, menu: menu))
-        #expect(steps == [.down])
+        #expect(controller.overviewScrollAccumulatedDelta == 0)
     }
 
     @Test
@@ -157,14 +149,14 @@ struct StatusMenuOverviewScrollTests {
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let flick = try #require(self.makeScrollEvent(deltaY: 500, precise: true))
+        let flick = try #require(self.makeScrollEvent(deltaY: 500, precise: false))
         #expect(controller.handleOverviewScrollWheel(flick, menu: menu))
         #expect(steps == [.up, .up, .up])
     }
 
     @Test
-    func `capped flick discards leftover distance`() throws {
-        let controller = self.makeController(suiteName: "OverviewScroll-CapRemainder")
+    func `precise flick is passed through instead of being capped into highlight jumps`() throws {
+        let controller = self.makeController(suiteName: "OverviewScroll-PreciseFlick")
         defer { controller.releaseStatusItemsForTesting() }
         let menu = self.makeOverviewMenu()
 
@@ -172,12 +164,7 @@ struct StatusMenuOverviewScrollTests {
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
         let flick = try #require(self.makeScrollEvent(deltaY: 500, precise: true))
-        #expect(controller.handleOverviewScrollWheel(flick, menu: menu))
-        #expect(steps == [.up, .up, .up])
-
-        steps = []
-        let smallScroll = try #require(self.makeScrollEvent(deltaY: 10, precise: true))
-        #expect(controller.handleOverviewScrollWheel(smallScroll, menu: menu))
+        #expect(!controller.handleOverviewScrollWheel(flick, menu: menu))
         #expect(steps.isEmpty)
     }
 
@@ -194,7 +181,7 @@ struct StatusMenuOverviewScrollTests {
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let scroll = try #require(self.makeScrollEvent(deltaY: 30, precise: true))
+        let scroll = try #require(self.makeScrollEvent(deltaY: 1, precise: false))
         #expect(!controller.handleOverviewScrollWheel(scroll, menu: menu))
         #expect(steps.isEmpty)
     }
@@ -209,7 +196,7 @@ struct StatusMenuOverviewScrollTests {
         var steps: [OverviewScrollStep] = []
         controller.overviewScrollNavigationHandlerForTesting = { steps.append($0) }
 
-        let scroll = try #require(self.makeScrollEvent(deltaY: 30, precise: true))
+        let scroll = try #require(self.makeScrollEvent(deltaY: 1, precise: false))
         #expect(!controller.handleOverviewScrollWheel(scroll, menu: menu))
         #expect(steps.isEmpty)
         #expect(!menu.items.isEmpty)

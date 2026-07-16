@@ -7,8 +7,10 @@ public struct CodexUsageResponse: Decodable, Sendable {
     public let planType: PlanType?
     public let rateLimit: RateLimitDetails?
     public let credits: CreditDetails?
+    public let individualLimit: SpendControlLimitSnapshot?
     /// Model-specific limits (e.g. GPT-5.3-Codex-Spark) that sit alongside the primary/weekly windows.
     public let additionalRateLimits: [AdditionalRateLimit]?
+    let additionalRateLimitsDecodeFailed: Bool
 
     enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
@@ -16,6 +18,8 @@ public struct CodexUsageResponse: Decodable, Sendable {
         case rateLimit = "rate_limit"
         case rateLimitsCamel = "rateLimits"
         case credits
+        case individualLimit = "individual_limit"
+        case individualLimitCamel = "individualLimit"
         case additionalRateLimits = "additional_rate_limits"
         case rateLimitsByLimitID = "rate_limits_by_limit_id"
         case rateLimitsByLimitIDCamel = "rateLimitsByLimitId"
@@ -28,12 +32,22 @@ public struct CodexUsageResponse: Decodable, Sendable {
         self.rateLimit = (try? container.decodeIfPresent(RateLimitDetails.self, forKey: .rateLimit))
             ?? (try? container.decodeIfPresent(RateLimitDetails.self, forKey: .rateLimitsCamel))
         self.credits = try? container.decodeIfPresent(CreditDetails.self, forKey: .credits)
+        self.individualLimit = (try? container.decodeIfPresent(
+            SpendControlLimitSnapshot.self,
+            forKey: .individualLimit))
+            ?? (try? container.decodeIfPresent(SpendControlLimitSnapshot.self, forKey: .individualLimitCamel))
         // Optional and additive: missing/malformed extra limits must never disturb primary/weekly mapping.
         // Decode per element so a single malformed entry cannot discard its valid siblings; a non-array
         // value (or absent field) leaves `additionalRateLimits` nil and primary/weekly mapping untouched.
-        let additionalRateLimits = try? container.decodeIfPresent(
-            [LossyAdditionalRateLimit].self,
-            forKey: .additionalRateLimits)
+        let additionalRateLimitsHadValue = Self.hasNonNilValue(container: container, key: .additionalRateLimits)
+        let decodedAdditionalRateLimits: [LossyAdditionalRateLimit]?
+        do {
+            decodedAdditionalRateLimits = try container.decodeIfPresent(
+                [LossyAdditionalRateLimit].self,
+                forKey: .additionalRateLimits)
+        } catch {
+            decodedAdditionalRateLimits = nil
+        }
         let byLimitID = (try? container.decodeIfPresent(
             [String: RateLimitBucket].self,
             forKey: .rateLimitsByLimitID))
@@ -43,8 +57,21 @@ public struct CodexUsageResponse: Decodable, Sendable {
         let explicitBuckets = byLimitID?
             .compactMap { key, bucket in bucket.additionalRateLimit(fallbackID: key) }
             ?? []
-        let combined = (additionalRateLimits?.compactMap(\.value) ?? []) + explicitBuckets
+        let decodedEntries = decodedAdditionalRateLimits?.compactMap(\.value) ?? []
+        let combined = decodedEntries + explicitBuckets
         self.additionalRateLimits = combined.isEmpty ? nil : combined
+        self.additionalRateLimitsDecodeFailed =
+            (additionalRateLimitsHadValue && decodedAdditionalRateLimits == nil)
+            || decodedAdditionalRateLimits?.contains(where: \.decodeFailed) == true
+            || decodedEntries.contains(where: \.hasWindowDecodeFailure)
+    }
+
+    private static func hasNonNilValue(
+        container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys) -> Bool
+    {
+        guard container.contains(key) else { return false }
+        return (try? container.decodeNil(forKey: key)) == false
     }
 
     public enum PlanType: Sendable, Decodable, Equatable {
@@ -108,6 +135,7 @@ public struct CodexUsageResponse: Decodable, Sendable {
     public struct RateLimitDetails: Decodable, Sendable {
         public let primaryWindow: WindowSnapshot?
         public let secondaryWindow: WindowSnapshot?
+        public let individualLimit: SpendControlLimitSnapshot?
         let primaryWindowDecodeFailed: Bool
         let secondaryWindowDecodeFailed: Bool
 
@@ -116,11 +144,14 @@ public struct CodexUsageResponse: Decodable, Sendable {
             case secondaryWindow = "secondary_window"
             case primary
             case secondary
+            case individualLimit = "individual_limit"
+            case individualLimitCamel = "individualLimit"
         }
 
         init(primaryWindow: WindowSnapshot?, secondaryWindow: WindowSnapshot?) {
             self.primaryWindow = primaryWindow
             self.secondaryWindow = secondaryWindow
+            self.individualLimit = nil
             self.primaryWindowDecodeFailed = false
             self.secondaryWindowDecodeFailed = false
         }
@@ -147,6 +178,10 @@ public struct CodexUsageResponse: Decodable, Sendable {
                 self.secondaryWindow = nil
                 self.secondaryWindowDecodeFailed = secondaryHadValue
             }
+            self.individualLimit = (try? container.decodeIfPresent(
+                SpendControlLimitSnapshot.self,
+                forKey: .individualLimit))
+                ?? (try? container.decodeIfPresent(SpendControlLimitSnapshot.self, forKey: .individualLimitCamel))
         }
 
         private static func hasNonNilValue(
@@ -202,6 +237,7 @@ public struct CodexUsageResponse: Decodable, Sendable {
         public let meteredFeature: String?
         public let rateLimit: RateLimitDetails?
         let usesExplicitWindowTitles: Bool
+        let rateLimitDecodeFailed: Bool
 
         enum CodingKeys: String, CodingKey {
             case limitName = "limit_name"
@@ -222,6 +258,7 @@ public struct CodexUsageResponse: Decodable, Sendable {
             self.meteredFeature = meteredFeature
             self.rateLimit = rateLimit
             self.usesExplicitWindowTitles = usesExplicitWindowTitles
+            self.rateLimitDecodeFailed = false
         }
 
         public init(from decoder: Decoder) throws {
@@ -230,9 +267,28 @@ public struct CodexUsageResponse: Decodable, Sendable {
                 ?? (try? container.decodeIfPresent(String.self, forKey: .limitNameCamel))
             self.meteredFeature = (try? container.decodeIfPresent(String.self, forKey: .meteredFeature))
                 ?? (try? container.decodeIfPresent(String.self, forKey: .meteredFeatureCamel))
-            self.rateLimit = (try? container.decodeIfPresent(RateLimitDetails.self, forKey: .rateLimit))
-                ?? (try? container.decodeIfPresent(RateLimitDetails.self, forKey: .rateLimitCamel))
+            let rateLimitKey = container.contains(.rateLimit) ? CodingKeys.rateLimit : .rateLimitCamel
+            let rateLimitHadValue = Self.hasNonNilValue(container: container, key: rateLimitKey)
+            do {
+                self.rateLimit = try container.decodeIfPresent(RateLimitDetails.self, forKey: rateLimitKey)
+                self.rateLimitDecodeFailed = false
+            } catch {
+                self.rateLimit = nil
+                self.rateLimitDecodeFailed = rateLimitHadValue
+            }
             self.usesExplicitWindowTitles = false
+        }
+
+        private static func hasNonNilValue(
+            container: KeyedDecodingContainer<CodingKeys>,
+            key: CodingKeys) -> Bool
+        {
+            guard container.contains(key) else { return false }
+            return (try? container.decodeNil(forKey: key)) == false
+        }
+
+        var hasWindowDecodeFailure: Bool {
+            self.rateLimitDecodeFailed || self.rateLimit?.hasWindowDecodeFailure == true
         }
     }
 
@@ -296,10 +352,70 @@ public struct CodexUsageResponse: Decodable, Sendable {
     /// entry cannot discard its valid siblings during array decoding.
     private struct LossyAdditionalRateLimit: Decodable {
         let value: AdditionalRateLimit?
+        let decodeFailed: Bool
 
         init(from decoder: Decoder) throws {
             let container = try decoder.singleValueContainer()
             self.value = try? container.decode(AdditionalRateLimit.self)
+            self.decodeFailed = self.value == nil
+        }
+    }
+
+    public struct SpendControlLimitSnapshot: Decodable, Sendable {
+        public let limit: Double?
+        public let used: Double?
+        public let remainingPercent: Double?
+        public let resetsAt: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case limit
+            case used
+            case remainingPercent
+            case remainingPercentSnake = "remaining_percent"
+            case resetsAt
+            case resetsAtSnake = "resets_at"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.limit = Self.decodeFlexibleDouble(container, forKey: .limit)
+            self.used = Self.decodeFlexibleDouble(container, forKey: .used)
+            self.remainingPercent = Self.decodeFlexibleDouble(container, forKey: .remainingPercent)
+                ?? Self.decodeFlexibleDouble(container, forKey: .remainingPercentSnake)
+            self.resetsAt = Self.decodeFlexibleInt(container, forKey: .resetsAt)
+                ?? Self.decodeFlexibleInt(container, forKey: .resetsAtSnake)
+        }
+
+        private static func decodeFlexibleDouble(
+            _ container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys) -> Double?
+        {
+            if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+                return Double(value)
+            }
+            if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+                return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return nil
+        }
+
+        private static func decodeFlexibleInt(
+            _ container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys) -> Int?
+        {
+            if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+                return value
+            }
+            if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+                return Int(value)
+            }
+            if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+                return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return nil
         }
     }
 
@@ -331,8 +447,8 @@ public struct CodexUsageResponse: Decodable, Sendable {
     }
 }
 
-private extension KeyedDecodingContainer {
-    func decodeFlexibleInt(forKeys keys: [Key]) throws -> Int {
+extension KeyedDecodingContainer {
+    fileprivate func decodeFlexibleInt(forKeys keys: [Key]) throws -> Int {
         if let value = try self.decodeFlexibleIntIfPresent(forKeys: keys) {
             return value
         }
@@ -343,7 +459,7 @@ private extension KeyedDecodingContainer {
                 debugDescription: "Expected an integer for one of: \(keys.map(\.stringValue).joined(separator: ", "))"))
     }
 
-    func decodeFlexibleIntIfPresent(forKeys keys: [Key]) throws -> Int? {
+    fileprivate func decodeFlexibleIntIfPresent(forKeys keys: [Key]) throws -> Int? {
         for key in keys where self.contains(key) {
             if let value = try? self.decodeIfPresent(Int.self, forKey: key) {
                 return value
@@ -388,15 +504,31 @@ public enum CodexOAuthUsageFetcher {
     private static let defaultChatGPTBaseURL = "https://chatgpt.com/backend-api/"
     private static let chatGPTUsagePath = "/wham/usage"
     private static let codexUsagePath = "/api/codex/usage"
+    private static let rateLimitResetCreditsPath = "/wham/rate-limit-reset-credits"
 
     public static func fetchUsage(
         accessToken: String,
         accountId: String?,
         env: [String: String] = ProcessInfo.processInfo.environment) async throws -> CodexUsageResponse
     {
-        var request = URLRequest(url: Self.resolveUsageURL(env: env))
+        try await self.fetchUsage(
+            accessToken: accessToken,
+            accountId: accountId,
+            env: env,
+            session: CodexAuthenticatedHTTPTransport.current)
+    }
+
+    public static func fetchUsage(
+        accessToken: String,
+        accountId: String?,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        session transport: any ProviderHTTPTransport) async throws -> CodexUsageResponse
+    {
+        var request = URLRequest(
+            url: Self.resolveUsageURL(env: env),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 30)
         request.httpMethod = "GET"
-        request.timeoutInterval = 30
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("CodexBar", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -406,7 +538,7 @@ public enum CodexOAuthUsageFetcher {
         }
 
         do {
-            let response = try await ProviderHTTPClient.shared.response(for: request)
+            let response = try await transport.response(for: request)
             let data = response.data
 
             switch response.statusCode {
@@ -424,7 +556,87 @@ public enum CodexOAuthUsageFetcher {
             }
         } catch let error as CodexOAuthFetchError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            throw CodexOAuthFetchError.networkError(error)
+        }
+    }
+
+    public static func fetchRateLimitResetCredits(
+        accessToken: String,
+        accountId: String?,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        timeout: TimeInterval = 4) async throws -> CodexRateLimitResetCreditsSnapshot
+    {
+        try await self.fetchRateLimitResetCredits(
+            accessToken: accessToken,
+            accountId: accountId,
+            env: env,
+            timeout: timeout,
+            session: CodexAuthenticatedHTTPTransport.current)
+    }
+
+    public static func fetchRateLimitResetCredits(
+        accessToken: String,
+        accountId: String?,
+        env: [String: String] = ProcessInfo.processInfo.environment,
+        timeout: TimeInterval = 4,
+        session transport: any ProviderHTTPTransport) async throws
+        -> CodexRateLimitResetCreditsSnapshot
+    {
+        var request = URLRequest(
+            url: Self.resolveRateLimitResetCreditsURL(env: env),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeout)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("CodexBar", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("codex-1", forHTTPHeaderField: "OpenAI-Beta")
+        request.setValue("Codex Desktop", forHTTPHeaderField: "originator")
+
+        if let accountId, !accountId.isEmpty {
+            request.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-ID")
+        }
+
+        do {
+            let response = try await transport.response(for: request)
+            let data = response.data
+
+            switch response.statusCode {
+            case 200...299:
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .custom(Self.decodeISO8601Date)
+                    let payload = try decoder.decode(RateLimitResetCreditsResponse.self, from: data)
+                    guard payload.availableCount >= 0 else {
+                        throw CodexOAuthFetchError.invalidResponse
+                    }
+                    return CodexRateLimitResetCreditsSnapshot(
+                        credits: payload.credits.map(\.model),
+                        availableCount: payload.availableCount,
+                        updatedAt: Date())
+                } catch {
+                    throw CodexOAuthFetchError.invalidResponse
+                }
+            case 401, 403:
+                throw CodexOAuthFetchError.unauthorized
+            default:
+                let body = String(data: data, encoding: .utf8)
+                throw CodexOAuthFetchError.serverError(response.statusCode, body)
+            }
+        } catch let error as CodexOAuthFetchError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
             throw CodexOAuthFetchError.networkError(error)
         }
     }
@@ -439,6 +651,17 @@ public enum CodexOAuthUsageFetcher {
         let path = normalized.contains("/backend-api") ? Self.chatGPTUsagePath : Self.codexUsagePath
         let full = normalized + path
         return URL(string: full) ?? URL(string: Self.defaultChatGPTBaseURL + Self.chatGPTUsagePath)!
+    }
+
+    private static func resolveRateLimitResetCreditsURL(env: [String: String]) -> URL {
+        self.resolveRateLimitResetCreditsURL(env: env, configContents: nil)
+    }
+
+    private static func resolveRateLimitResetCreditsURL(env: [String: String], configContents: String?) -> URL {
+        let baseURL = self.resolveChatGPTBaseURL(env: env, configContents: configContents)
+        let normalized = self.normalizeChatGPTBaseURL(baseURL)
+        let full = normalized + Self.rateLimitResetCreditsPath
+        return URL(string: full) ?? URL(string: Self.defaultChatGPTBaseURL + Self.rateLimitResetCreditsPath)!
     }
 
     private static func resolveChatGPTBaseURL(env: [String: String], configContents: String?) -> String {
@@ -495,6 +718,68 @@ public enum CodexOAuthUsageFetcher {
         let url = root.appendingPathComponent("config.toml")
         return try? String(contentsOf: url, encoding: .utf8)
     }
+
+    private struct RateLimitResetCreditsResponse: Decodable {
+        let credits: [RateLimitResetCreditResponse]
+        let availableCount: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case credits
+            case availableCount = "available_count"
+        }
+    }
+
+    private struct RateLimitResetCreditResponse: Decodable {
+        let id: String
+        let resetType: String
+        let status: CodexRateLimitResetCreditStatus
+        let grantedAt: Date
+        let expiresAt: Date?
+        let redeemStartedAt: Date?
+        let redeemedAt: Date?
+        let title: String?
+        let description: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case resetType = "reset_type"
+            case status
+            case grantedAt = "granted_at"
+            case expiresAt = "expires_at"
+            case redeemStartedAt = "redeem_started_at"
+            case redeemedAt = "redeemed_at"
+            case title
+            case description
+        }
+
+        var model: CodexRateLimitResetCredit {
+            CodexRateLimitResetCredit(
+                id: self.id,
+                resetType: self.resetType,
+                status: self.status,
+                grantedAt: self.grantedAt,
+                expiresAt: self.expiresAt,
+                redeemStartedAt: self.redeemStartedAt,
+                redeemedAt: self.redeemedAt,
+                title: self.title,
+                description: self.description)
+        }
+    }
+
+    private static func decodeISO8601Date(from decoder: Decoder) throws -> Date {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let seconds = ISO8601DateFormatter()
+        seconds.formatOptions = [.withInternetDateTime]
+        if let date = fractional.date(from: raw) ?? seconds.date(from: raw) {
+            return date
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Invalid ISO-8601 date: \(raw)")
+    }
 }
 
 #if DEBUG
@@ -505,6 +790,26 @@ extension CodexOAuthUsageFetcher {
 
     static func _decodeUsageResponseForTesting(_ data: Data) throws -> CodexUsageResponse {
         try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+    }
+
+    static func _resolveRateLimitResetCreditsURLForTesting(
+        env: [String: String] = [:],
+        configContents: String? = nil) -> URL
+    {
+        self.resolveRateLimitResetCreditsURL(env: env, configContents: configContents)
+    }
+
+    static func _decodeRateLimitResetCreditsForTesting(
+        _ data: Data,
+        now: Date = Date()) throws -> CodexRateLimitResetCreditsSnapshot
+    {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom(Self.decodeISO8601Date)
+        let payload = try decoder.decode(RateLimitResetCreditsResponse.self, from: data)
+        return CodexRateLimitResetCreditsSnapshot(
+            credits: payload.credits.map(\.model),
+            availableCount: payload.availableCount,
+            updatedAt: now)
     }
 }
 #endif

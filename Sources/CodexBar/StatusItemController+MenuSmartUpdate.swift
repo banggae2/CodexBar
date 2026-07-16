@@ -32,40 +32,43 @@ extension StatusItemController {
 
             if isSelectionSwitch,
                let outgoingSelection,
-               self.hasReusableMergedSwitcherContent(
+               let cachedItems = self.reusableMergedSwitcherContent(
                    for: context.switcherSelection,
                    in: menu,
                    menuWidth: context.menuWidth,
                    codexAccountDisplay: context.codexAccountDisplay,
                    tokenAccountDisplay: context.tokenAccountDisplay)
             {
-                // Instant path: the incoming tab reattaches wholesale, so park the outgoing
-                // items for an equally instant switch-back.
-                self.cacheVisibleMergedSwitcherContent(
+                // Park the outgoing payloads for an equally instant switch-back. Compatible
+                // menu-item shells stay attached, avoiding the empty intermediate layout that
+                // AppKit can visibly render when the whole content block is removed first.
+                let outgoingCodexAccountDisplay = self.lastCodexAccountMenuDisplay
+                let outgoingTokenAccountDisplay = self.lastTokenAccountMenuDisplay
+                self.rememberMergedSwitcherState(enabledProviders, context.switcherSelection)
+                let displacedItems = self.replaceMenuContentKeepingRowsVisible(
+                    menu,
+                    fromIndex: contentStartIndex,
+                    with: cachedItems)
+                // Cached items may have changed refresh state while detached from a menu.
+                self.updatePersistentRefreshItemsEnabled()
+                self.refreshMenuCardHeights(in: menu)
+                self.cacheMergedSwitcherContent(
+                    displacedItems,
                     in: menu,
                     selection: outgoingSelection,
-                    contentStartIndex: contentStartIndex,
-                    menuWidth: context.menuWidth)
-                while menu.items.count > contentStartIndex {
-                    menu.removeItem(at: contentStartIndex)
-                }
-                self.rememberMergedSwitcherState(enabledProviders, context.switcherSelection)
-                if self.addCachedMergedSwitcherContent(
-                    for: context.switcherSelection,
-                    to: menu,
-                    menuWidth: context.menuWidth,
-                    codexAccountDisplay: context.codexAccountDisplay,
-                    tokenAccountDisplay: context.tokenAccountDisplay)
-                {
-                    return
-                }
-                self.addSwitcherScopedMenuContent(into: menu, captureMenu: menu, context: context)
+                    context: MergedSwitcherContentCacheContext(
+                        menuWidth: context.menuWidth,
+                        codexAccountDisplay: outgoingCodexAccountDisplay,
+                        tokenAccountDisplay: outgoingTokenAccountDisplay,
+                        contentVersion: nil))
+                self.lastCodexAccountMenuDisplay = context.codexAccountDisplay
+                self.lastTokenAccountMenuDisplay = context.tokenAccountDisplay
                 self.cacheVisibleMergedSwitcherContent(
                     in: menu,
                     selection: context.switcherSelection,
                     contentStartIndex: contentStartIndex,
                     menuWidth: context.menuWidth,
-                    contentVersion: self.menuContentVersion)
+                    contentVersion: self.menuSession.contentVersion)
                 return
             }
 
@@ -86,12 +89,13 @@ extension StatusItemController {
             scratch.autoenablesItems = false
             self.addSwitcherScopedMenuContent(into: scratch, captureMenu: menu, context: context)
             self.reconcileMenuContent(menu, fromIndex: contentStartIndex, shapes: shapes, with: scratch)
+            self.refreshMenuCardHeights(in: menu)
             self.cacheVisibleMergedSwitcherContent(
                 in: menu,
                 selection: context.switcherSelection,
                 contentStartIndex: contentStartIndex,
                 menuWidth: context.menuWidth,
-                contentVersion: self.menuContentVersion)
+                contentVersion: self.menuSession.contentVersion)
         }
     }
 

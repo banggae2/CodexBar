@@ -17,16 +17,6 @@ struct ClaudeUsageTests {
         }
     }
 
-    private static func makeOAuthUsageResponse() throws -> OAuthUsageResponse {
-        let json = """
-        {
-          "five_hour": { "utilization": 7, "resets_at": "2025-12-23T16:00:00.000Z" },
-          "seven_day": { "utilization": 21, "resets_at": "2025-12-29T23:00:00.000Z" }
-        }
-        """
-        return try ClaudeOAuthUsageFetcher._decodeUsageResponseForTesting(Data(json.utf8))
-    }
-
     @Test
     func `parses usage JSON with sonnet limit`() {
         let json = """
@@ -58,7 +48,7 @@ struct ClaudeUsageTests {
             dataSource: .oauth,
             oauthKeychainPromptCooldownEnabled: true)
 
-        let fetchOverride: (@Sendable (String) async throws -> OAuthUsageResponse)? = { _ in usageResponse }
+        let fetchOverride: (@Sendable (String, Bool) async throws -> OAuthUsageResponse)? = { _, _ in usageResponse }
         let delegatedOverride: (@Sendable (
             Date,
             TimeInterval,
@@ -228,7 +218,7 @@ struct ClaudeUsageTests {
             dataSource: .oauth,
             oauthKeychainPromptCooldownEnabled: true)
 
-        let fetchOverride: (@Sendable (String) async throws -> OAuthUsageResponse)? = { _ in usageResponse }
+        let fetchOverride: (@Sendable (String, Bool) async throws -> OAuthUsageResponse)? = { _, _ in usageResponse }
         let delegatedOverride: (@Sendable (Date, TimeInterval, [String: String]) async
             -> ClaudeOAuthDelegatedRefreshCoordinator.Outcome)? = { _, _, _ in
             _ = await delegatedCounter.increment()
@@ -411,7 +401,7 @@ struct ClaudeUsageTests {
             oauthKeychainPromptCooldownEnabled: true,
             allowStartupBootstrapPrompt: true)
 
-        let fetchOverride: (@Sendable (String) async throws -> OAuthUsageResponse)? = { _ in usageResponse }
+        let fetchOverride: (@Sendable (String, Bool) async throws -> OAuthUsageResponse)? = { _, _ in usageResponse }
         let loadCredsOverride: (@Sendable (
             [String: String],
             Bool,
@@ -463,7 +453,7 @@ struct ClaudeUsageTests {
             oauthKeychainPromptCooldownEnabled: false,
             allowBackgroundDelegatedRefresh: true)
 
-        let fetchOverride: (@Sendable (String) async throws -> OAuthUsageResponse)? = { _ in usageResponse }
+        let fetchOverride: (@Sendable (String, Bool) async throws -> OAuthUsageResponse)? = { _, _ in usageResponse }
         let delegatedOverride: (@Sendable (
             Date,
             TimeInterval,
@@ -573,8 +563,12 @@ struct ClaudeUsageTests {
                 "session_5h": ["pct_used": 0, "resets": ""],
                 "week_all_models": ["pct_used": 0, "resets": ""],
             ] as [String: Any]
-            if let email = entry["email"] { payload["account_email"] = email }
-            if let org = entry["org"] { payload["account_org"] = org }
+            if let email = entry["email"] {
+                payload["account_email"] = email
+            }
+            if let org = entry["org"] {
+                payload["account_org"] = org
+            }
             let data = try JSONSerialization.data(withJSONObject: payload)
             let snap = ClaudeUsageFetcher.parse(json: data)
             let emailRaw: String? = entry["email"] ?? String?.none
@@ -635,7 +629,9 @@ struct ClaudeUsageTests {
 
         try process.run()
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                process.terminate()
+            }
         }
         process.waitUntilExit()
 
@@ -802,7 +798,7 @@ struct ClaudeUsageTests {
         let data = Data(json.utf8)
         let info = ClaudeWebAPIFetcher._parseAccountInfoForTesting(data, orgId: "org-123")
         #expect(info?.email == "steipete@gmail.com")
-        #expect(info?.loginMethod == "Claude Max")
+        #expect(info?.loginMethod == "Claude Max 20x")
     }
 
     @Test
@@ -879,6 +875,18 @@ struct ClaudeUsageTests {
         #expect(defaultVersion?.isEmpty != true)
         #expect(webVersion?.isEmpty != true)
         #expect(cliVersion?.isEmpty != true)
+    }
+}
+
+extension ClaudeUsageTests {
+    private static func makeOAuthUsageResponse() throws -> OAuthUsageResponse {
+        let json = """
+        {
+          "five_hour": { "utilization": 7, "resets_at": "2025-12-23T16:00:00.000Z" },
+          "seven_day": { "utilization": 21, "resets_at": "2025-12-29T23:00:00.000Z" }
+        }
+        """
+        return try ClaudeOAuthUsageFetcher._decodeUsageResponseForTesting(Data(json.utf8))
     }
 }
 
@@ -1078,7 +1086,9 @@ struct ClaudeAutoFetcherCharacterizationTests {
                     let url = try #require(request.url)
                     return Self.makeJSONResponse(url: url, body: "{}")
                 }, operation: {
-                    let fetchOverride: @Sendable (String) async throws -> OAuthUsageResponse = { _ in usageResponse }
+                    let fetchOverride: @Sendable (String, Bool) async throws -> OAuthUsageResponse = { _, _ in
+                        usageResponse
+                    }
                     let snapshot = try await ClaudeUsageFetcher.$fetchOAuthUsageOverride.withValue(
                         fetchOverride,
                         operation: {
@@ -1289,7 +1299,11 @@ struct ClaudeAutoFetcherCharacterizationTests {
 }
 
 final class ClaudeAutoFetcherStubURLProtocol: URLProtocol {
-    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let _handlerBox = LockIsolated<((URLRequest) throws -> (HTTPURLResponse, Data))?>(nil)
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))? {
+        get { Self._handlerBox.value }
+        set { Self._handlerBox.setValue(newValue) }
+    }
 
     override static func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "claude.ai"
@@ -1405,7 +1419,7 @@ extension ClaudeUsageTests {
     }
 
     @Test
-    func `oauth delegated retry experimental background ignores only on user action suppression`() async throws {
+    func `oauth delegated retry experimental background respects only on user action suppression`() async throws {
         let loadCounter = AsyncCounter()
         let delegatedCounter = AsyncCounter()
         let usageResponse = try Self.makeOAuthUsageResponse()
@@ -1417,7 +1431,7 @@ extension ClaudeUsageTests {
             oauthKeychainPromptCooldownEnabled: true,
             allowBackgroundDelegatedRefresh: false)
 
-        let fetchOverride: (@Sendable (String) async throws -> OAuthUsageResponse)? = { _ in usageResponse }
+        let fetchOverride: (@Sendable (String, Bool) async throws -> OAuthUsageResponse)? = { _, _ in usageResponse }
         let delegatedOverride: (@Sendable (
             Date,
             TimeInterval,
@@ -1429,43 +1443,36 @@ extension ClaudeUsageTests {
             [String: String],
             Bool,
             Bool) async throws -> ClaudeOAuthCredentials)? = { _, _, _ in
-            let call = await loadCounter.increment()
-            if call == 1 {
-                throw ClaudeOAuthCredentialsError.refreshDelegatedToClaudeCLI
-            }
-            return ClaudeOAuthCredentials(
-                accessToken: "fresh-token",
-                refreshToken: "refresh-token",
-                expiresAt: Date(timeIntervalSinceNow: 3600),
-                scopes: ["user:profile"],
-                rateLimitTier: nil)
+            _ = await loadCounter.increment()
+            throw ClaudeOAuthCredentialsError.refreshDelegatedToClaudeCLI
         }
 
-        let snapshot = try await ClaudeOAuthKeychainReadStrategyPreference.withTaskOverrideForTesting(
-            .securityCLIExperimental,
-            operation: {
-                try await ClaudeOAuthKeychainPromptPreference.withTaskOverrideForTesting(.onlyOnUserAction) {
-                    try await ProviderInteractionContext.$current.withValue(.background) {
-                        try await ClaudeUsageFetcher.$hasCachedCredentialsOverride.withValue(true) {
-                            try await ClaudeUsageFetcher.$fetchOAuthUsageOverride.withValue(fetchOverride) {
-                                try await ClaudeUsageFetcher.$delegatedRefreshAttemptOverride.withValue(
-                                    delegatedOverride)
-                                {
-                                    try await ClaudeUsageFetcher.$loadOAuthCredentialsOverride.withValue(
-                                        loadCredsOverride)
+        await #expect(throws: ClaudeUsageError.self) {
+            try await ClaudeOAuthKeychainReadStrategyPreference.withTaskOverrideForTesting(
+                .securityCLIExperimental,
+                operation: {
+                    try await ClaudeOAuthKeychainPromptPreference.withTaskOverrideForTesting(.onlyOnUserAction) {
+                        try await ProviderInteractionContext.$current.withValue(.background) {
+                            try await ClaudeUsageFetcher.$hasCachedCredentialsOverride.withValue(true) {
+                                try await ClaudeUsageFetcher.$fetchOAuthUsageOverride.withValue(fetchOverride) {
+                                    try await ClaudeUsageFetcher.$delegatedRefreshAttemptOverride.withValue(
+                                        delegatedOverride)
                                     {
-                                        try await fetcher.loadLatestUsage(model: "sonnet")
+                                        try await ClaudeUsageFetcher.$loadOAuthCredentialsOverride.withValue(
+                                            loadCredsOverride)
+                                        {
+                                            try await fetcher.loadLatestUsage(model: "sonnet")
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            })
+                })
+        }
 
-        #expect(await loadCounter.current() == 2)
-        #expect(await delegatedCounter.current() == 1)
-        #expect(snapshot.primary.usedPercent == 7)
+        #expect(await loadCounter.current() == 1)
+        #expect(await delegatedCounter.current() == 0)
     }
 
     @Test

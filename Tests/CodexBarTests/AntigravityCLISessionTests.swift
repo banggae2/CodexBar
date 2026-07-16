@@ -481,7 +481,11 @@ struct AntigravityCLISessionTests {
         let firstReplacement = Task {
             try await fixture.session.beginProbe(binary: "/new/agy")
         }
-        await fixture.sleeper?.waitForSleeps(1)
+        // Two sleeps register here: the lingering idle-timer sleep (armed by the prior finishProbe;
+        // the fake sleeper does not honor cancellation) and the teardown grace-period sleep. Wait for
+        // both before resuming — waiting for only one lets resumeAll() fire before the grace sleep
+        // parks, stranding it so teardown never completes and the suite hangs to the 120s timeout.
+        await fixture.sleeper?.waitForSleeps(2)
 
         let secondReplacement = Task {
             try await fixture.session.beginProbe(binary: "/new/agy")
@@ -628,6 +632,32 @@ struct AntigravityCLISessionTests {
     }
 
     @Test
+    func `pty launcher retries transient text busy spawn errors`() {
+        var attempts = 0
+
+        let result = AntigravityPTYProcessLauncher.spawnWithTextBusyRetry(retryDelay: 0) {
+            attempts += 1
+            return attempts < 3 ? ETXTBSY : 0
+        }
+
+        #expect(result == 0)
+        #expect(attempts == 3)
+    }
+
+    @Test
+    func `pty launcher does not retry other spawn errors`() {
+        var attempts = 0
+
+        let result = AntigravityPTYProcessLauncher.spawnWithTextBusyRetry(retryDelay: 0) {
+            attempts += 1
+            return EACCES
+        }
+
+        #expect(result == EACCES)
+        #expect(attempts == 1)
+    }
+
+    @Test
     func `pty launcher uses home and closes unrelated descriptors`() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("antigravity-spawn-\(UUID().uuidString)", isDirectory: true)
@@ -648,9 +678,7 @@ struct AntigravityCLISessionTests {
         defer { close(inheritedFD) }
 
         let outputURL = tempDirectory.appendingPathComponent("result.txt")
-        let scriptURL = tempDirectory.appendingPathComponent("probe.sh")
         let script = """
-        #!/bin/sh
         pwd > \(outputURL.path)
         if [ -e /dev/fd/\(inheritedFD) ] || [ -e /proc/self/fd/\(inheritedFD) ]; then
           echo inherited >> \(outputURL.path)
@@ -658,17 +686,25 @@ struct AntigravityCLISessionTests {
           echo closed >> \(outputURL.path)
         fi
         """
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        #expect(chmod(scriptURL.path, 0o700) == 0)
 
-        let handle = try AntigravityPTYProcessLauncher().launch(binary: scriptURL.path)
+        let handle = try AntigravityPTYProcessLauncher().launch(
+            binary: "/bin/sh",
+            arguments: ["-c", script])
         defer {
             handle.killRoot()
             handle.terminateTree(signal: SIGKILL, knownDescendants: [])
             handle.closePTY()
         }
 
-        for _ in 0..<200 where !FileManager.default.fileExists(atPath: outputURL.path) {
+        for _ in 0..<200 {
+            if FileManager.default.fileExists(atPath: outputURL.path),
+               let output = try? String(contentsOf: outputURL, encoding: .utf8)
+            {
+                let lines = output
+                    .split(separator: "\n")
+                    .map(String.init)
+                if lines.count >= 2, output.hasSuffix("\n") { break }
+            }
             Thread.sleep(forTimeInterval: 0.01)
         }
         let lines = try String(contentsOf: outputURL, encoding: .utf8)
@@ -718,7 +754,7 @@ struct AntigravityCLISessionTests {
         let handle = try #require(fixture.launcher.handleSnapshot().first)
         handle.enqueueDrainOutput(Data([0xE2, 0x96]))
         let first = await fixture.session.drainOutput()
-        handle.enqueueDrainOutput(Data([0x84]) + Data("You are currently not signed in".utf8))
+        handle.enqueueDrainOutput(Data([0x84]) + Data("Select login method:".utf8))
         let second = await fixture.session.drainOutput()
         let third = await fixture.session.drainOutput()
 
@@ -731,13 +767,23 @@ struct AntigravityCLISessionTests {
     }
 
     @Test
+    func `authentication prompt matcher tolerates prompt casing and spacing`() {
+        #expect(AntigravityCLIHTTPSFetchStrategy.containsAuthenticationPrompt(
+            Data("select  LOGIN\nmethod :".utf8)))
+        #expect(AntigravityCLIHTTPSFetchStrategy.containsAuthenticationPrompt(
+            Data("Select login method:".utf8)))
+        #expect(!AntigravityCLIHTTPSFetchStrategy.containsAuthenticationPrompt(
+            Data("You are currently not signed in".utf8)))
+    }
+
+    @Test
     func `session returns complete new output before retaining only its tail`() async throws {
         let fixture = self.makeFixture()
         fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
 
         _ = try await fixture.session.beginProbe(binary: "/bin/agy")
         let handle = try #require(fixture.launcher.handleSnapshot().first)
-        let prompt = Data("You are currently not signed in".utf8)
+        let prompt = Data("Select login method:".utf8)
         let oversizedRedraw = prompt + Data(repeating: 0x20, count: 8192)
         handle.enqueueDrainOutput(oversizedRedraw)
 

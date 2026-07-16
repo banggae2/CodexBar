@@ -1,5 +1,20 @@
 import Foundation
 
+private final class PiSessionISO8601FormatterBox: @unchecked Sendable {
+    let lock = NSLock()
+    let withFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    let plain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+}
+
 enum PiSessionCostScanner {
     struct Options {
         var piSessionsRoot: URL?
@@ -34,6 +49,7 @@ enum PiSessionCostScanner {
     private struct ModelsDevPricingContext {
         let catalog: ModelsDevCatalog?
         let cacheRoot: URL?
+        let pricingKey: String
     }
 
     private struct ScanContext {
@@ -44,8 +60,13 @@ enum PiSessionCostScanner {
     }
 
     private static let costScale = 1_000_000_000.0
+    /// Bump for Pi-only cost formula changes not represented by the parser or pricing fingerprints.
+    private static let costFormulaVersion = 1
     private static let maxLineBytes = 16 * 1024 * 1024
     private static let maxSafeRoundedInt = Double(Int.max) - 1
+    private static let sessionStartFilenameRegex = try? NSRegularExpression(
+        pattern: "^(\\d{4}-\\d{2}-\\d{2})T(\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z_")
+    private static let isoFormatterBox = PiSessionISO8601FormatterBox()
 
     static func loadDailyReport(
         provider: UsageProvider,
@@ -80,12 +101,12 @@ enum PiSessionCostScanner {
         var cache = PiSessionCostCacheIO.load(cacheRoot: options.cacheRoot)
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
         let refreshMs = Int64(max(0, options.refreshMinIntervalSeconds) * 1000)
-        let pricingContext = ModelsDevPricingContext(
-            catalog: CostUsagePricing.modelsDevCatalog(now: now, cacheRoot: options.cacheRoot),
-            cacheRoot: options.cacheRoot)
+        let pricingContext = self.pricingContext(now: now, cacheRoot: options.cacheRoot)
         let windowExpanded = self.requestedWindowExpandsCache(range: range, cache: cache)
+        let pricingChanged = cache.pricingKey != pricingContext.pricingKey
         let shouldRefresh = options.forceRescan
             || windowExpanded
+            || pricingChanged
             || refreshMs == 0
             || cache.lastScanUnixMs == 0
             || nowMs - cache.lastScanUnixMs > refreshMs
@@ -103,7 +124,7 @@ enum PiSessionCostScanner {
                     cache: &cache,
                     context: ScanContext(
                         range: range,
-                        forceRescan: options.forceRescan || windowExpanded,
+                        forceRescan: options.forceRescan || windowExpanded || pricingChanged,
                         pricingContext: pricingContext,
                         checkCancellation: checkCancellation))
             }
@@ -121,6 +142,7 @@ enum PiSessionCostScanner {
 
             cache.scanSinceKey = range.scanSinceKey
             cache.scanUntilKey = range.scanUntilKey
+            cache.pricingKey = pricingContext.pricingKey
             cache.lastScanUnixMs = nowMs
             try checkCancellation?()
             PiSessionCostCacheIO.save(cache: cache, cacheRoot: options.cacheRoot)
@@ -133,12 +155,32 @@ enum PiSessionCostScanner {
             pricingContext: pricingContext)
     }
 
+    struct CachedDailyReportResult {
+        let report: CostUsageDailyReport
+        let lastScanAt: Date?
+    }
+
     static func loadCachedDailyReport(
         provider: UsageProvider,
         since: Date,
         until: Date,
         now: Date = Date(),
         cacheRoot: URL? = nil) -> CostUsageDailyReport?
+    {
+        self.loadCachedDailyReportResult(
+            provider: provider,
+            since: since,
+            until: until,
+            now: now,
+            cacheRoot: cacheRoot)?.report
+    }
+
+    static func loadCachedDailyReportResult(
+        provider: UsageProvider,
+        since: Date,
+        until: Date,
+        now: Date = Date(),
+        cacheRoot: URL? = nil) -> CachedDailyReportResult?
     {
         guard provider == .codex || provider == .claude else { return nil }
 
@@ -147,15 +189,30 @@ enum PiSessionCostScanner {
         guard !cache.daysByProvider.isEmpty else { return nil }
         guard !self.requestedWindowExpandsCache(range: range, cache: cache) else { return nil }
 
-        let pricingContext = ModelsDevPricingContext(
-            catalog: CostUsagePricing.modelsDevCatalog(now: now, cacheRoot: cacheRoot),
-            cacheRoot: cacheRoot)
+        let pricingContext = self.pricingContext(now: now, cacheRoot: cacheRoot)
+        guard cache.pricingKey == pricingContext.pricingKey else { return nil }
         let report = self.buildReport(
             provider: provider,
             cache: cache,
             range: range,
             pricingContext: pricingContext)
-        return report.data.isEmpty ? nil : report
+        guard !report.data.isEmpty else { return nil }
+        let lastScanAt = cache.lastScanUnixMs > 0
+            ? Date(timeIntervalSince1970: TimeInterval(cache.lastScanUnixMs) / 1000)
+            : nil
+        return CachedDailyReportResult(report: report, lastScanAt: lastScanAt)
+    }
+
+    private static func pricingContext(now: Date, cacheRoot: URL?) -> ModelsDevPricingContext {
+        let modelsDevArtifact = ModelsDevCache.load(now: now, cacheRoot: cacheRoot).artifact
+        return ModelsDevPricingContext(
+            catalog: modelsDevArtifact?.catalog,
+            cacheRoot: cacheRoot,
+            pricingKey: CostUsagePricingKey.codex(
+                modelsDevArtifact: modelsDevArtifact,
+                formulaVersion: Self.costFormulaVersion,
+                parserHash: CodexParserHash.value,
+                modelsDevProviderIDs: ["anthropic", "openai"]))
     }
 
     private static func requestedWindowExpandsCache(
@@ -602,11 +659,15 @@ enum PiSessionCostScanner {
     {
         switch provider {
         case .codex:
+            // Pi records input, cache reads, and cache writes as disjoint counts. Codex pricing
+            // expects cached/write tokens to be subsets of total input, so reconstruct that total
+            // here and pass writes separately (1.25x input for GPT-5.6 when rates are known).
             CostUsagePricing.codexCostUSD(
                 model: modelName,
                 inputTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
                 cachedInputTokens: usage.cacheReadTokens,
                 outputTokens: usage.outputTokens,
+                cacheWriteInputTokens: usage.cacheWriteTokens,
                 modelsDevCatalog: pricingContext?.catalog,
                 modelsDevCacheRoot: pricingContext?.cacheRoot)
         case .claude:
@@ -819,8 +880,7 @@ extension PiSessionCostScanner {
     }
 
     private static func parseSessionStartFromFilename(_ filename: String) -> Date? {
-        let pattern = "^(\\d{4}-\\d{2}-\\d{2})T(\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z_"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = self.sessionStartFilenameRegex else { return nil }
         let range = NSRange(filename.startIndex..<filename.endIndex, in: filename)
         guard let match = regex.firstMatch(in: filename, range: range) else { return nil }
         guard (1...5).allSatisfy({ Range(match.range(at: $0), in: filename) != nil }) else { return nil }
@@ -833,14 +893,10 @@ extension PiSessionCostScanner {
     }
 
     private static func parseISO(_ text: String) -> Date? {
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFractional.date(from: text) {
-            return date
-        }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: text)
+        self.isoFormatterBox.lock.lock()
+        defer { self.isoFormatterBox.lock.unlock() }
+        return self.isoFormatterBox.withFractional.date(from: text)
+            ?? self.isoFormatterBox.plain.date(from: text)
     }
 
     private static func localMidnight(_ date: Date) -> Date {

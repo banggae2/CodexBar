@@ -67,6 +67,37 @@ struct StatusProbeTests {
     }
 
     @Test
+    func `parse codex monthly credit limit`() throws {
+        let now = try #require(
+            Calendar(identifier: .gregorian).date(from: DateComponents(
+                timeZone: TimeZone.current,
+                year: 2026,
+                month: 6,
+                day: 23,
+                hour: 12,
+                minute: 0)))
+        let sample = """
+        Model: codex-status-fixture
+        Monthly credit limit: [██████████████████░░] 92% left (resets 08:00 on 1 Jul)
+                            7,761 of 100,000 credits used
+        """
+
+        let snap = try CodexStatusProbe.parse(text: sample, now: now)
+
+        #expect(snap.codexCreditLimit?.limit == 100_000)
+        #expect(snap.codexCreditLimit?.used == 7761)
+        #expect(snap.codexCreditLimit?.remaining == 92239)
+        #expect(snap.codexCreditLimit?.remainingPercent == 92)
+        #expect(snap.codexCreditLimit?.resetsAt == Calendar(identifier: .gregorian).date(from: DateComponents(
+            timeZone: TimeZone.current,
+            year: 2026,
+            month: 7,
+            day: 1,
+            hour: 8,
+            minute: 0)))
+    }
+
+    @Test
     func `parse claude status`() throws {
         let sample = """
         Settings: Status   Config   Usage (tab to cycle)
@@ -533,6 +564,13 @@ struct StatusProbeTests {
             let lower = message.lowercased()
             #expect(lower.contains("subscription"))
             #expect(!lower.contains("still loading"))
+            #expect(ClaudeStatusProbe.isSubscriptionQuotaUnavailableDescription(message))
+
+            let errorDescription = ClaudeStatusProbeError.parseFailed(message).localizedDescription
+            #expect(UsageLimitsAvailability.resolve(
+                provider: .claude,
+                snapshot: nil,
+                lastErrorDescription: errorDescription) == .unavailable)
         } catch {
             #expect(Bool(false), "Unexpected error: \(error)")
         }
@@ -592,17 +630,40 @@ struct StatusProbeTests {
     }
 
     @Test
-    func `parses claude reset time only`() throws {
-        let now = Date(timeIntervalSince1970: 1_733_690_000)
-        let parsed = ClaudeStatusProbe.parseResetDate(from: "Resets 12:59pm (Europe/Helsinki)", now: now)
-        let tz = try #require(TimeZone(identifier: "Europe/Helsinki"))
+    func `uses the five hour window to resolve stale claude reset times`() throws {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = tz
-        var expected = try #require(calendar.date(bySettingHour: 12, minute: 59, second: 0, of: now))
-        if expected < now {
-            expected = try #require(calendar.date(byAdding: .day, value: 1, to: expected))
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let cases: [(now: DateComponents, text: String, expected: DateComponents)] = [
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15),
+                "Resets 3pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15, minute: 5),
+                "Resets 3pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15, minute: 0)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 20),
+                "Resets 3pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 23, minute: 59),
+                "Resets 12:01am (UTC)",
+                DateComponents(year: 2026, month: 7, day: 10, hour: 0, minute: 1)),
+            (
+                DateComponents(year: 2026, month: 7, day: 10, hour: 0, minute: 1),
+                "Resets 11:59pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 23, minute: 59)),
+        ]
+
+        for item in cases {
+            let now = try #require(calendar.date(from: item.now))
+            let parsed = ClaudeStatusProbe.parseResetDate(
+                from: item.text,
+                now: now,
+                expectedWindow: 5 * 60 * 60)
+            #expect(parsed == calendar.date(from: item.expected), "Failed session-window resolution: \(item.text)")
         }
-        #expect(parsed == expected)
     }
 
     @Test
@@ -622,6 +683,89 @@ struct StatusProbeTests {
     }
 
     @Test
+    func `uses the weekly window to resolve stale claude reset dates`() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let cases: [(now: DateComponents, text: String, expected: DateComponents)] = [
+            (
+                DateComponents(year: 2026, month: 12, day: 31, hour: 23),
+                "Resets Jan 2, 3:15am (UTC)",
+                DateComponents(year: 2027, month: 1, day: 2, hour: 3, minute: 15)),
+            (
+                DateComponents(year: 2026, month: 12, day: 31, hour: 23),
+                "Resets Jan 2, 3am (UTC)",
+                DateComponents(year: 2027, month: 1, day: 2, hour: 3, minute: 0)),
+            (
+                DateComponents(year: 2027, month: 1, day: 1, hour: 0, minute: 5),
+                "Resets Dec 31, 11:59pm (UTC)",
+                DateComponents(year: 2026, month: 12, day: 31, hour: 23, minute: 59)),
+            (
+                DateComponents(year: 2027, month: 1, day: 1, hour: 0, minute: 5),
+                "Resets Dec 31, 11pm (UTC)",
+                DateComponents(year: 2026, month: 12, day: 31, hour: 23, minute: 0)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15, minute: 5),
+                "Resets Jul 9, 3:00pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 15, minute: 0)),
+        ]
+
+        for item in cases {
+            let now = try #require(calendar.date(from: item.now))
+            let parsed = ClaudeStatusProbe.parseResetDate(
+                from: item.text,
+                now: now,
+                expectedWindow: 7 * 24 * 60 * 60)
+            #expect(parsed == calendar.date(from: item.expected), "Failed weekly-window resolution: \(item.text)")
+        }
+    }
+
+    @Test
+    func `public claude reset parser remains forward looking`() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let cases: [(now: DateComponents, text: String, expected: DateComponents)] = [
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 8),
+                "Resets 9pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 9, hour: 21)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 20),
+                "Resets 1pm (UTC)",
+                DateComponents(year: 2026, month: 7, day: 10, hour: 13)),
+            (
+                DateComponents(year: 2026, month: 7, day: 9, hour: 12),
+                "Resets Jul 1, 9am (UTC)",
+                DateComponents(year: 2027, month: 7, day: 1, hour: 9)),
+        ]
+
+        for item in cases {
+            let now = try #require(calendar.date(from: item.now))
+            let parsed = ClaudeStatusProbe.parseResetDate(from: item.text, now: now)
+            #expect(parsed == calendar.date(from: item.expected), "Failed future resolution: \(item.text)")
+        }
+    }
+
+    @Test
+    func `stale same day claude reset renders resets now`() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 9, hour: 15, minute: 5, second: 0)))
+        let resetText = "Resets Jul 9, 3:00pm (UTC)"
+        let resetDate = try #require(ClaudeStatusProbe.parseResetDate(
+            from: resetText,
+            now: now,
+            expectedWindow: 5 * 60 * 60))
+        let window = RateWindow(
+            usedPercent: 73,
+            windowMinutes: 5 * 60,
+            resetsAt: resetDate,
+            resetDescription: resetText)
+
+        #expect(UsageFormatter.resetLine(for: window, style: .countdown, now: now) == "Resets now")
+    }
+
+    @Test
     func `parses claude reset with dot separated time`() throws {
         let now = Date(timeIntervalSince1970: 1_733_690_000)
         let parsed = ClaudeStatusProbe.parseResetDate(from: "Resets Dec 9 at 5.27am (UTC)", now: now)
@@ -637,10 +781,8 @@ struct StatusProbeTests {
         let parsedTimeOnly = ClaudeStatusProbe.parseResetDate(from: "Resets 1pm (UTC)", now: now)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-        var expected = try #require(calendar.date(bySettingHour: 13, minute: 0, second: 0, of: now))
-        if expected < now {
-            expected = try #require(calendar.date(byAdding: .day, value: 1, to: expected))
-        }
+        let sameDay = try #require(calendar.date(bySettingHour: 13, minute: 0, second: 0, of: now))
+        let expected = try #require(calendar.date(byAdding: .day, value: 1, to: sameDay))
         #expect(parsedTimeOnly == expected)
 
         let parsedDateTime = ClaudeStatusProbe.parseResetDate(from: "Resets Dec 9, 9am", now: now)

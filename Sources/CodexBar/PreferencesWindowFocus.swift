@@ -1,11 +1,22 @@
 import AppKit
+import CodexBarCore
 
 @MainActor
 enum PreferencesWindowFocus {
     static let settingsWindowIdentifier = "com_apple_SwiftUI_Settings_window"
 
     private static var knownTabTitles: Set<String> {
-        Set(PreferencesTab.allCases.map(\.title))
+        let fixedPanes: [SettingsPane] = [
+            .general,
+            .notifications,
+            .menuBar,
+            .menu,
+            .advanced,
+            .about,
+            .debug,
+        ]
+        let providerPanes = UsageProvider.allCases.map(SettingsPane.provider)
+        return Set((fixedPanes + providerPanes).map(\.title))
     }
 
     static func settingsWindow(in windows: [NSWindow] = NSApp.windows) -> NSWindow? {

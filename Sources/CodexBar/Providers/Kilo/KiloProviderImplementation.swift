@@ -1,10 +1,8 @@
 import AppKit
 import CodexBarCore
-import CodexBarMacroSupport
 import Foundation
 import SwiftUI
 
-@ProviderImplementationRegistration
 struct KiloProviderImplementation: ProviderImplementation {
     let id: UsageProvider = .kilo
 
@@ -127,7 +125,7 @@ struct KiloProviderImplementation: ProviderImplementation {
             },
             onRefresh: { [weak settings] in
                 guard let settings else {
-                    return .init(success: false, errorMessage: "Settings unavailable.")
+                    return .init(success: false, errorMessage: L("Settings unavailable."))
                 }
                 let resolved: KiloResolvedBearerToken
                 do {
@@ -137,7 +135,7 @@ struct KiloProviderImplementation: ProviderImplementation {
                 } catch let error as LocalizedError {
                     return .init(
                         success: false,
-                        errorMessage: error.errorDescription ?? "Failed to resolve Kilo credentials.")
+                        errorMessage: error.errorDescription ?? L("Failed to resolve Kilo credentials."))
                 } catch {
                     return .init(success: false, errorMessage: error.localizedDescription)
                 }
@@ -150,7 +148,7 @@ struct KiloProviderImplementation: ProviderImplementation {
                 } catch let error as LocalizedError {
                     return .init(
                         success: false,
-                        errorMessage: error.errorDescription ?? "Failed to load organizations.")
+                        errorMessage: error.errorDescription ?? L("Failed to load organizations."))
                 } catch {
                     return .init(success: false, errorMessage: error.localizedDescription)
                 }

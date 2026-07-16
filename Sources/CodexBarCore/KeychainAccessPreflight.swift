@@ -46,11 +46,18 @@ public enum KeychainPromptHandler {
     public nonisolated(unsafe) static var handler: ((KeychainPromptContext) -> Void)?
 
     public static func notify(_ context: KeychainPromptContext) {
+        _ = self.notifyIfHandled(context)
+    }
+
+    @discardableResult
+    static func notifyIfHandled(_ context: KeychainPromptContext) -> Bool {
         if let taskHandlerStore {
             taskHandlerStore.handler(context)
-            return
+            return true
         }
-        self.handler?(context)
+        guard let handler else { return false }
+        handler(context)
+        return true
     }
 
     #if DEBUG
@@ -100,6 +107,10 @@ public enum KeychainAccessPreflight {
         self.checkGenericPasswordOverride = override
     }
 
+    static var hasCheckGenericPasswordOverrideForTesting: Bool {
+        self.taskCheckGenericPasswordOverrideStore != nil || self.checkGenericPasswordOverride != nil
+    }
+
     static func withCheckGenericPasswordOverrideForTesting<T>(
         _ override: ((String, String?) -> Outcome)?,
         operation: () throws -> T) rethrows -> T
@@ -113,6 +124,7 @@ public enum KeychainAccessPreflight {
 
     static func withCheckGenericPasswordOverrideForTesting<T>(
         _ override: ((String, String?) -> Outcome)?,
+        isolation _: isolated (any Actor)? = #isolation,
         operation: () async throws -> T) async rethrows -> T
     {
         try await self.$taskCheckGenericPasswordOverrideStore.withValue(
@@ -137,7 +149,7 @@ public enum KeychainAccessPreflight {
         let query = self.makeGenericPasswordPreflightQuery(service: service, account: account)
 
         var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = KeychainSecurity.copyMatching(query as CFDictionary, &result)
         switch status {
         case errSecSuccess:
             self.log.debug("Keychain preflight allowed", metadata: ["service": service])

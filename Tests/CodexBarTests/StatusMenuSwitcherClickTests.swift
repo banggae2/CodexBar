@@ -206,6 +206,7 @@ struct StatusMenuSwitcherClickTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = true
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.selectedMenuProvider = .codex
         settings.mergedMenuLastSelectedWasOverview = false
 
@@ -314,6 +315,7 @@ struct StatusMenuSwitcherClickTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = true
+        settings.menuBarUsageDisplayStyle = .iconPercent
         settings.selectedMenuProvider = .codex
         settings.mergedMenuLastSelectedWasOverview = false
 
@@ -381,6 +383,8 @@ struct StatusMenuSwitcherClickTests {
         settings.mergeIcons = true
         settings.selectedMenuProvider = .openai
         settings.mergedMenuLastSelectedWasOverview = true
+        settings.costUsageEnabled = true
+        settings.costSummaryDisplayStyle = .both
 
         let registry = ProviderRegistry.shared
         for provider in UsageProvider.allCases {
@@ -904,11 +908,12 @@ struct StatusMenuSwitcherClickTests {
             #expect(abs((contentFrame?.midY ?? -1) - frame.height / 2) <= 0.5)
         }
         for (buttonFrame, trackFrame) in zip(buttonFrames.dropFirst(), trackFrames) {
-            #expect(trackFrame.maxY < buttonFrame.minY)
+            #expect(trackFrame.minY >= buttonFrame.minY)
+            #expect(trackFrame.maxY <= buttonFrame.maxY)
         }
 
         #expect(view._test_rowCount() == 4)
-        #expect(view._test_rowHeight() == 44)
-        #expect(view.bounds.height == 188)
+        #expect(view._test_rowHeight() == 39)
+        #expect(view.bounds.height == 168)
     }
 }

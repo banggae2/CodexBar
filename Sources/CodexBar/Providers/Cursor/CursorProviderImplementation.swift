@@ -1,9 +1,7 @@
 import CodexBarCore
-import CodexBarMacroSupport
 import Foundation
 import SwiftUI
 
-@ProviderImplementationRegistration
 struct CursorProviderImplementation: ProviderImplementation {
     let id: UsageProvider = .cursor
     let supportsLoginFlow: Bool = true
@@ -69,9 +67,7 @@ struct CursorProviderImplementation: ProviderImplementation {
                 isVisible: nil,
                 onChange: nil,
                 trailingText: {
-                    guard let entry = CookieHeaderCache.load(provider: .cursor) else { return nil }
-                    let when = entry.storedAt.relativeDescription()
-                    return L10n.string("Cached source time format", entry.sourceLabel, when)
+                    ProviderCookieSourceUI.cachedTrailingText(provider: .cursor)
                 }),
         ]
     }
@@ -85,7 +81,6 @@ struct CursorProviderImplementation: ProviderImplementation {
     @MainActor
     func runLoginFlow(context: ProviderLoginContext) async -> Bool {
         await context.controller.runCursorLoginFlow()
-        return true
     }
 
     @MainActor

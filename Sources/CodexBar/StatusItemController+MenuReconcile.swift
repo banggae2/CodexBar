@@ -4,6 +4,7 @@ import AppKit
 /// into the recycle pool so reconciliation can still compare row shapes afterwards.
 struct MenuRowShape {
     let isSeparator: Bool
+    let requiresNativeImageReplacement: Bool
     let id: String?
     let viewClassName: String?
 }
@@ -14,9 +15,20 @@ extension StatusItemController {
         return menu.items[fromIndex...].map { item in
             MenuRowShape(
                 isSeparator: item.isSeparatorItem,
+                requiresNativeImageReplacement: self.shouldReplaceNativeImageItemDuringReconcile(item),
                 id: item.representedObject as? String,
                 viewClassName: item.view.map { String(describing: type(of: $0)) })
         }
+    }
+
+    /// Identifies leaf AppKit image items that should be replaced instead of updated in place.
+    ///
+    /// AppKit can retain stale layout state for standard image-backed menu items after repeated
+    /// in-place updates, which makes rows such as "Status Page" drift horizontally. Submenu rows
+    /// stay on the normal reconciliation path because replacing their parent item can disturb an
+    /// active submenu.
+    private func shouldReplaceNativeImageItemDuringReconcile(_ item: NSMenuItem) -> Bool {
+        !item.isSeparatorItem && item.view == nil && item.image != nil && item.submenu == nil
     }
 
     /// Position-wise in-place reconciliation: live rows whose shape matches the freshly
@@ -44,6 +56,9 @@ extension StatusItemController {
         func updatable(_ shape: MenuRowShape, _ newItem: NSMenuItem) -> Bool {
             guard shape.isSeparator == newItem.isSeparatorItem else { return false }
             if shape.isSeparator { return true }
+            guard !shape.requiresNativeImageReplacement,
+                  !self.shouldReplaceNativeImageItemDuringReconcile(newItem)
+            else { return false }
             guard shape.id == newItem.representedObject as? String else { return false }
             return shape.viewClassName == newItem.view.map { String(describing: type(of: $0)) }
         }
@@ -79,10 +94,65 @@ extension StatusItemController {
         }
     }
 
+    /// Replaces cached content without first emptying the tracked menu. Compatible item shells
+    /// stay attached while their payloads swap; only separator or row-count differences cause
+    /// structural mutations.
+    func replaceMenuContentKeepingRowsVisible(
+        _ menu: NSMenu,
+        fromIndex: Int,
+        with newItems: [NSMenuItem])
+        -> [NSMenuItem]
+    {
+        guard fromIndex >= 0, fromIndex <= menu.items.count else { return [] }
+        defer { self.finishReconciledHighlightTracking(in: menu) }
+
+        let liveItems = Array(menu.items[fromIndex...])
+        let liveCount = liveItems.count
+        let sharedCount = min(liveCount, newItems.count)
+        var displacedItems: [NSMenuItem] = []
+        displacedItems.reserveCapacity(liveCount)
+        for offset in 0..<sharedCount {
+            let index = fromIndex + offset
+            let liveItem = liveItems[offset]
+            let newItem = newItems[offset]
+            let requiresNativeImageReplacement =
+                self.shouldReplaceNativeImageItemDuringReconcile(liveItem) ||
+                self.shouldReplaceNativeImageItemDuringReconcile(newItem)
+            if liveItem.isSeparatorItem == newItem.isSeparatorItem, !requiresNativeImageReplacement {
+                if !liveItem.isSeparatorItem {
+                    self.swapMenuItemContents(liveItem, newItem)
+                }
+                displacedItems.append(newItem)
+            } else {
+                menu.insertItem(newItem, at: index)
+                menu.removeItem(liveItem)
+                displacedItems.append(liveItem)
+            }
+        }
+        if newItems.count > liveCount {
+            for offset in liveCount..<newItems.count {
+                menu.insertItem(newItems[offset], at: fromIndex + offset)
+            }
+        } else if liveCount > newItems.count {
+            for offset in newItems.count..<liveCount {
+                menu.removeItem(liveItems[offset])
+                displacedItems.append(liveItems[offset])
+            }
+        }
+        return displacedItems
+    }
+
     private func finishReconciledHighlightTracking(in menu: NSMenu) {
         let menuKey = ObjectIdentifier(menu)
         guard let highlightedItem = self.highlightedMenuItems[menuKey] else { return }
         guard highlightedItem.menu === menu else {
+            self.highlightedMenuItems.removeValue(forKey: menuKey)
+            (highlightedItem.view as? MenuCardHighlighting)?.setHighlighted(false)
+            return
+        }
+        guard highlightedItem.isEnabled,
+              (highlightedItem.view as? MenuCardHighlighting)?.allowsMenuHighlight != false
+        else {
             self.highlightedMenuItems.removeValue(forKey: menuKey)
             (highlightedItem.view as? MenuCardHighlighting)?.setHighlighted(false)
             return
@@ -111,7 +181,6 @@ extension StatusItemController {
         let submenu = newItem.submenu
         newItem.submenu = nil
         liveItem.view = view
-        (view as? MenuCardHighlighting)?.setHighlighted(remainsHighlighted)
         liveItem.submenu = submenu
         liveItem.title = newItem.title
         liveItem.attributedTitle = newItem.attributedTitle
@@ -120,13 +189,33 @@ extension StatusItemController {
         liveItem.representedObject = newItem.representedObject
         liveItem.state = newItem.state
         liveItem.isEnabled = newItem.isEnabled
+        let allowsHighlight = (view as? MenuCardHighlighting)?.allowsMenuHighlight != false
+        (view as? MenuCardHighlighting)?.setHighlighted(newItem.isEnabled && allowsHighlight && remainsHighlighted)
         liveItem.image = newItem.image
         liveItem.toolTip = newItem.toolTip
         liveItem.keyEquivalent = newItem.keyEquivalent
         liveItem.keyEquivalentModifierMask = newItem.keyEquivalentModifierMask
         liveItem.indentationLevel = newItem.indentationLevel
+        liveItem.tag = newItem.tag
+        liveItem.identifier = newItem.identifier
+        liveItem.isHidden = newItem.isHidden
+        liveItem.isAlternate = newItem.isAlternate
+        liveItem.allowsKeyEquivalentWhenHidden = newItem.allowsKeyEquivalentWhenHidden
+        liveItem.onStateImage = newItem.onStateImage
+        liveItem.offStateImage = newItem.offStateImage
+        liveItem.mixedStateImage = newItem.mixedStateImage
         if #available(macOS 14.4, *) {
             liveItem.subtitle = newItem.subtitle
         }
+        if self.isPersistentRefreshItem(liveItem) {
+            self.persistentRefreshItems.add(liveItem)
+        }
+    }
+
+    private func swapMenuItemContents(_ liveItem: NSMenuItem, _ cachedItem: NSMenuItem) {
+        let holder = NSMenuItem()
+        self.updateMenuItemInPlace(holder, from: liveItem)
+        self.updateMenuItemInPlace(liveItem, from: cachedItem)
+        self.updateMenuItemInPlace(cachedItem, from: holder)
     }
 }

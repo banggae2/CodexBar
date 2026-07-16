@@ -3,6 +3,86 @@ import Testing
 @testable import CodexBarCore
 
 struct KimiK2UsageFetcherTests {
+    @Test(arguments: [nil, "  \n"] as [String?])
+    func `provider reports a missing or blank API key instead of a generic unavailable strategy`(
+        apiKey: String?) async
+    {
+        let environment = apiKey.map { ["KIMI_K2_API_KEY": $0] } ?? [:]
+        let context = Self.makeContext(environment: environment)
+
+        let outcome = await KimiK2ProviderDescriptor.descriptor.fetchOutcome(context: context)
+
+        guard case let .failure(error) = outcome.result else {
+            Issue.record("Expected missing credentials failure")
+            return
+        }
+        #expect(error.localizedDescription == "Missing Kimi K2 API key.")
+        #expect(outcome.attempts.count == 1)
+        #expect(outcome.attempts.first?.wasAvailable == true)
+    }
+
+    @Test
+    func `trims API key before sending authorization`() async throws {
+        let fixtureKey = "test-token"
+        let paddedKey = "  \(fixtureKey)\n"
+        let transport = ProviderHTTPTransportHandler { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == ["Bearer", fixtureKey].joined(separator: " "))
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil))
+            return (Data(#"{"credits_remaining":10}"#.utf8), response)
+        }
+
+        let snapshot = try await KimiK2UsageFetcher.fetchUsage(
+            apiKey: paddedKey,
+            transport: transport)
+
+        #expect(snapshot.summary.remaining == 10)
+    }
+
+    @Test
+    func `maps rejected API key to invalid credentials`() async throws {
+        let transport = ProviderHTTPTransportHandler { request in
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(
+                url: url,
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil))
+            return (Data(#"{\"error\":\"fixture_unauthorized\"}"#.utf8), response)
+        }
+
+        await #expect {
+            try await KimiK2UsageFetcher.fetchUsage(apiKey: "test-token", transport: transport)
+        } throws: { error in
+            guard case KimiK2UsageError.invalidCredentials = error else { return false }
+            return error.localizedDescription == "Kimi K2 API key is invalid or expired."
+        }
+    }
+
+    @Test(arguments: [403, 500])
+    func `preserves non-credential responses as API errors`(statusCode: Int) async throws {
+        let transport = ProviderHTTPTransportHandler { request in
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: nil))
+            return (Data(#"{"error":"fixture_failure"}"#.utf8), response)
+        }
+
+        await #expect {
+            try await KimiK2UsageFetcher.fetchUsage(apiKey: "test-token", transport: transport)
+        } throws: { error in
+            guard case let KimiK2UsageError.apiError(message) = error else { return false }
+            return message.contains("fixture_failure")
+        }
+    }
+
     @Test
     func `parses usage from nested usage`() throws {
         let json = """
@@ -41,6 +121,34 @@ struct KimiK2UsageFetcherTests {
     }
 
     @Test
+    func `fetch ignores non-finite usage values`() async throws {
+        let json = """
+        {
+          "total_credits_consumed": "NaN",
+          "credits_remaining": "Infinity",
+          "average_tokens": "1e309"
+        }
+        """
+        let transport = ProviderHTTPTransportHandler { request in
+            let url = try #require(request.url)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
+            let response = try #require(HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["X-Credits-Remaining": "-Infinity"]))
+            return (Data(json.utf8), response)
+        }
+
+        let snapshot = try await KimiK2UsageFetcher.fetchUsage(apiKey: "test-key", transport: transport)
+        let summary = snapshot.summary
+
+        #expect(summary.consumed == 0)
+        #expect(summary.remaining == 0)
+        #expect(summary.averageTokens == nil)
+    }
+
+    @Test
     func `parses numeric timestamp seconds`() throws {
         let json = """
         {
@@ -73,6 +181,54 @@ struct KimiK2UsageFetcherTests {
     }
 
     @Test
+    func `treats exact millisecond cutoff as milliseconds`() throws {
+        let json = """
+        {
+          "timestamp": 1000000000000,
+          "credits_remaining": 10,
+          "total_credits_consumed": 5
+        }
+        """
+
+        let summary = try KimiK2UsageFetcher._parseSummaryForTesting(Data(json.utf8))
+
+        #expect(summary.updatedAt == Date(timeIntervalSince1970: 1_000_000_000))
+    }
+
+    @Test(arguments: ["NaN", "Infinity", "1e308", "0", "-1"])
+    func `ignores invalid numeric timestamps`(timestamp: String) throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let json = """
+        {
+          "timestamp": "\(timestamp)",
+          "credits_remaining": 10,
+          "total_credits_consumed": 5
+        }
+        """
+
+        let summary = try KimiK2UsageFetcher._parseSummaryForTesting(Data(json.utf8), now: now)
+
+        #expect(summary.updatedAt == now)
+    }
+
+    @Test
+    func `ignores timestamps beyond distant future`() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let timestamp = Date.distantFuture.timeIntervalSince1970 + 1
+        let json = """
+        {
+          "timestamp": "\(timestamp)",
+          "credits_remaining": 10,
+          "total_credits_consumed": 5
+        }
+        """
+
+        let summary = try KimiK2UsageFetcher._parseSummaryForTesting(Data(json.utf8), now: now)
+
+        #expect(summary.updatedAt == now)
+    }
+
+    @Test
     func `invalid root returns parse error`() {
         let json = """
         [{ "total": 1 }]
@@ -97,5 +253,34 @@ struct KimiK2UsageFetcherTests {
         #expect(usage.primary == nil)
         #expect(usage.identity?.providerID == .kimik2)
         #expect(usage.identity?.loginMethod == "Credits: 25 left")
+    }
+
+    private static func makeContext(environment: [String: String]) -> ProviderFetchContext {
+        ProviderFetchContext(
+            runtime: .cli,
+            sourceMode: .api,
+            includeCredits: false,
+            webTimeout: 1,
+            webDebugDumpHTML: false,
+            verbose: false,
+            env: environment,
+            settings: nil,
+            fetcher: UsageFetcher(environment: environment),
+            claudeFetcher: KimiK2StubClaudeFetcher(),
+            browserDetection: BrowserDetection(cacheTTL: 0))
+    }
+}
+
+private struct KimiK2StubClaudeFetcher: ClaudeUsageFetching {
+    func loadLatestUsage(model _: String) async throws -> ClaudeUsageSnapshot {
+        throw KimiK2UsageError.missingCredentials
+    }
+
+    func debugRawProbe(model _: String) async -> String {
+        "stub"
+    }
+
+    func detectVersion() -> String? {
+        nil
     }
 }

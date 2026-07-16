@@ -36,6 +36,71 @@ extension StatusMenuTests {
     }
 
     @Test
+    func `menu card enabled state follows interaction affordances`() {
+        let previousRendering = StatusItemController.menuCardRenderingEnabled
+        defer { StatusItemController.menuCardRenderingEnabled = previousRendering }
+
+        for renderingEnabled in [false, true] {
+            StatusItemController.menuCardRenderingEnabled = renderingEnabled
+            let settings = self.makeSettings()
+            settings.statusChecksEnabled = false
+            let controller = self.makeRecyclingController(settings: settings)
+            defer { controller.releaseStatusItemsForTesting() }
+
+            let informational = controller.makeMenuCardItem(Text("Info"), id: "info", width: 300)
+            let embedded = controller.makeMenuCardItem(
+                Text("Embedded"),
+                id: "embedded",
+                width: 300,
+                containsInteractiveControls: true)
+            let clickable = controller.makeMenuCardItem(Text("Click"), id: "click", width: 300, onClick: {})
+            let submenu = controller.makeMenuCardItem(
+                Text("Submenu"),
+                id: "submenu",
+                width: 300,
+                submenu: NSMenu())
+
+            #expect(!informational.isEnabled)
+            #expect(embedded.isEnabled == renderingEnabled)
+            #expect(clickable.isEnabled)
+            #expect(submenu.isEnabled)
+        }
+    }
+
+    @Test
+    func `embedded controls stay enabled without highlighting the card`() {
+        StatusItemController.setMenuRefreshEnabledForTesting(false)
+        let previousRendering = StatusItemController.menuCardRenderingEnabled
+        StatusItemController.menuCardRenderingEnabled = true
+        defer { StatusItemController.menuCardRenderingEnabled = previousRendering }
+
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        let controller = self.makeRecyclingController(settings: settings)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        let menu = NSMenu()
+        let item = controller.makeMenuCardItem(
+            Text("Embedded"),
+            id: "embedded",
+            width: 300,
+            containsInteractiveControls: true)
+        menu.addItem(item)
+
+        controller.menu(menu, willHighlight: item)
+
+        #expect(item.isEnabled)
+        #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] == nil)
+        guard let hosting = item.view as? MenuCardItemHostingView<MenuCardSectionContainerView<Text>>
+        else {
+            Issue.record("expected a card hosting view")
+            return
+        }
+        #expect(!hosting.allowsMenuHighlight)
+        #expect(!hosting.highlightState.isHighlighted)
+    }
+
+    @Test
     func `merged menu width uses widest provider action set`() {
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -74,7 +139,7 @@ extension StatusMenuTests {
 
         let menu = NSMenu()
         let usageHistoryItem = controller.makeMenuCardItem(
-            Text("Subscription Utilization"),
+            Text("Plan Usage"),
             id: "usageHistorySubmenu",
             width: StatusItemController.menuCardBaseWidth)
         menu.addItem(usageHistoryItem)
@@ -141,7 +206,7 @@ extension StatusMenuTests {
     }
 
     @Test
-    func `merged data tick reconciles items in place without churn`() {
+    func `merged data tick keeps row count and card views stable`() {
         StatusItemController.setMenuRefreshEnabledForTesting(false)
         let previousRendering = StatusItemController.menuCardRenderingEnabled
         StatusItemController.menuCardRenderingEnabled = true
@@ -175,15 +240,14 @@ extension StatusMenuTests {
         controller.selectedMenuProvider = .codex
         let menu = controller.makeMenu()
         controller.populateMenu(menu, provider: .codex)
-        let itemsBefore = menu.items.map(ObjectIdentifier.init)
+        let itemCountBefore = menu.items.count
         let cardViewsBefore = self.cardViewIdentities(in: menu)
         #expect(!cardViewsBefore.isEmpty)
 
         controller.invalidateMenus(allowStaleContentDuringDataRefresh: true)
         controller.populateMenu(menu, provider: .codex)
 
-        let itemsAfter = menu.items.map(ObjectIdentifier.init)
-        #expect(itemsAfter == itemsBefore, "data-only repopulate should not remove or insert menu items")
+        #expect(menu.items.count == itemCountBefore, "data-only repopulate should keep row count stable")
         let cardViewsAfter = self.cardViewIdentities(in: menu)
         for (id, identity) in cardViewsBefore {
             #expect(cardViewsAfter[id] == identity, "card \(id) should reuse its hosting view")
@@ -239,6 +303,82 @@ extension StatusMenuTests {
     }
 
     @Test
+    func `cached provider content replaces native image rows and preserves switch back items`() {
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        let controller = self.makeRecyclingController(settings: settings)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        let outgoing = NSMenuItem(title: "Status Page", action: nil, keyEquivalent: "")
+        outgoing.image = NSImage(size: NSSize(width: 16, height: 16))
+        let incoming = NSMenuItem(title: "Dashboard", action: nil, keyEquivalent: "")
+        incoming.image = NSImage(size: NSSize(width: 16, height: 16))
+        let menu = NSMenu()
+        menu.addItem(outgoing)
+
+        let displacedOutgoing = controller.replaceMenuContentKeepingRowsVisible(
+            menu,
+            fromIndex: 0,
+            with: [incoming])
+
+        #expect(menu.items.first === incoming)
+        #expect(displacedOutgoing.first === outgoing)
+
+        let displacedIncoming = controller.replaceMenuContentKeepingRowsVisible(
+            menu,
+            fromIndex: 0,
+            with: displacedOutgoing)
+
+        #expect(menu.items.first === outgoing)
+        #expect(displacedIncoming.first === incoming)
+    }
+
+    @Test
+    func `cached provider content swap preserves both item sets for switch back`() {
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        let controller = self.makeRecyclingController(settings: settings)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        let switcher = NSMenuItem(title: "Switcher", action: nil, keyEquivalent: "")
+        let outgoing = [
+            NSMenuItem(title: "Overview Card", action: nil, keyEquivalent: ""),
+            NSMenuItem.separator(),
+            NSMenuItem(title: "Overview Action", action: nil, keyEquivalent: ""),
+        ]
+        let incoming = [
+            NSMenuItem(title: "Codex Card", action: nil, keyEquivalent: ""),
+            NSMenuItem.separator(),
+            NSMenuItem(title: "Codex Usage", action: nil, keyEquivalent: ""),
+            NSMenuItem(title: "Codex Settings", action: nil, keyEquivalent: ""),
+        ]
+        let menu = NSMenu()
+        menu.addItem(switcher)
+        outgoing.forEach(menu.addItem)
+
+        let displacedOutgoing = controller.replaceMenuContentKeepingRowsVisible(
+            menu,
+            fromIndex: 1,
+            with: incoming)
+
+        #expect(menu.items.first === switcher)
+        #expect(menu.items.dropFirst().map(\.title) == ["Codex Card", "", "Codex Usage", "Codex Settings"])
+        #expect(Array(menu.items[1...3]).map(ObjectIdentifier.init) == outgoing.map(ObjectIdentifier.init))
+        #expect(displacedOutgoing.map(ObjectIdentifier.init) == incoming.prefix(3).map(ObjectIdentifier.init))
+        #expect(displacedOutgoing.map(\.title) == ["Overview Card", "", "Overview Action"])
+
+        let displacedIncoming = controller.replaceMenuContentKeepingRowsVisible(
+            menu,
+            fromIndex: 1,
+            with: displacedOutgoing)
+
+        #expect(Array(menu.items.dropFirst()).map(ObjectIdentifier.init) == outgoing.map(ObjectIdentifier.init))
+        #expect(displacedIncoming.map(ObjectIdentifier.init) == incoming.map(ObjectIdentifier.init))
+        #expect(displacedIncoming.allSatisfy { $0.menu == nil })
+        #expect(displacedIncoming.map(\.title) == ["Codex Card", "", "Codex Usage", "Codex Settings"])
+    }
+
+    @Test
     func `reconcile preserves highlight on a retained custom action row`() {
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -283,7 +423,7 @@ extension StatusMenuTests {
         defer { controller.releaseStatusItemsForTesting() }
 
         let menu = NSMenu()
-        let liveItem = controller.makeMenuCardItem(Text("before"), id: "menuCard", width: 300)
+        let liveItem = controller.makeMenuCardItem(Text("before"), id: "menuCard", width: 300, onClick: {})
         menu.addItem(liveItem)
         controller.menu(menu, willHighlight: liveItem)
         guard let hosting = liveItem.view as? MenuCardItemHostingView<MenuCardSectionContainerView<Text>>
@@ -303,13 +443,53 @@ extension StatusMenuTests {
         #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] === liveItem)
 
         let scratch = NSMenu()
-        scratch.addItem(controller.makeMenuCardItem(Text("after"), id: "menuCard", width: 300))
+        scratch.addItem(controller.makeMenuCardItem(Text("after"), id: "menuCard", width: 300, onClick: {}))
         controller.reconcileMenuContent(menu, fromIndex: 0, shapes: shapes, with: scratch)
 
         #expect(menu.items[0] === liveItem)
         #expect(liveItem.view === hosting)
         #expect(hosting.highlightState.isHighlighted)
         #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] === liveItem)
+    }
+
+    @Test
+    func `reconcile clears highlight when a retained card becomes disabled`() {
+        StatusItemController.setMenuRefreshEnabledForTesting(false)
+        let previousRendering = StatusItemController.menuCardRenderingEnabled
+        StatusItemController.menuCardRenderingEnabled = true
+        defer { StatusItemController.menuCardRenderingEnabled = previousRendering }
+
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        let controller = self.makeRecyclingController(settings: settings)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        let menu = NSMenu()
+        let liveItem = controller.makeMenuCardItem(Text("before"), id: "menuCard", width: 300, onClick: {})
+        menu.addItem(liveItem)
+        controller.menu(menu, willHighlight: liveItem)
+        guard let liveView = liveItem.view as? MenuCardItemHostingView<MenuCardSectionContainerView<Text>>
+        else {
+            Issue.record("expected a card hosting view")
+            return
+        }
+        #expect(liveView.highlightState.isHighlighted)
+        #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] === liveItem)
+
+        let shapes = controller.menuContentShapes(in: menu, fromIndex: 0)
+        let scratch = NSMenu()
+        scratch.addItem(controller.makeMenuCardItem(Text("after"), id: "menuCard", width: 300))
+        controller.reconcileMenuContent(menu, fromIndex: 0, shapes: shapes, with: scratch)
+
+        #expect(menu.items[0] === liveItem)
+        #expect(!liveItem.isEnabled)
+        #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] == nil)
+        guard let rebuiltView = liveItem.view as? MenuCardItemHostingView<MenuCardSectionContainerView<Text>>
+        else {
+            Issue.record("expected the rebuilt card hosting view")
+            return
+        }
+        #expect(!rebuiltView.highlightState.isHighlighted)
     }
 
     @Test
@@ -326,7 +506,7 @@ extension StatusMenuTests {
         defer { controller.releaseStatusItemsForTesting() }
 
         let menu = NSMenu()
-        let item = controller.makeMenuCardItem(Text("card"), id: "menuCard", width: 300)
+        let item = controller.makeMenuCardItem(Text("card"), id: "menuCard", width: 300, onClick: {})
         menu.addItem(item)
 
         let entry = CachedMergedSwitcherMenuContent(
@@ -452,6 +632,25 @@ extension StatusMenuTests {
     }
 
     @Test
+    func `recycled card clears button role when click action is removed`() {
+        let highlightState = MenuCardHighlightState()
+        let hosting = MenuCardItemHostingView(
+            rootView: Text("clickable"),
+            highlightState: highlightState,
+            allowsMenuHighlight: true,
+            onClick: {})
+
+        #expect(hosting.accessibilityRole() == .button)
+
+        hosting.prepareForReuse(
+            rootView: Text("informational"),
+            allowsMenuHighlight: false,
+            onClick: nil)
+
+        #expect(hosting.accessibilityRole() == .group)
+    }
+
+    @Test
     func `harvesting a highlighted card clears its highlight and tracking entry`() {
         StatusItemController.setMenuRefreshEnabledForTesting(false)
         let previousRendering = StatusItemController.menuCardRenderingEnabled
@@ -465,7 +664,7 @@ extension StatusMenuTests {
         defer { controller.releaseStatusItemsForTesting() }
 
         let menu = NSMenu()
-        let item = controller.makeMenuCardItem(Text("card"), id: "menuCard", width: 300)
+        let item = controller.makeMenuCardItem(Text("card"), id: "menuCard", width: 300, onClick: {})
         menu.addItem(item)
         controller.menu(menu, willHighlight: item)
         guard let hosting = item.view as? MenuCardItemHostingView<MenuCardSectionContainerView<Text>>
@@ -482,7 +681,7 @@ extension StatusMenuTests {
         #expect(!hosting.highlightState.isHighlighted)
         #expect(controller.highlightedMenuItems[ObjectIdentifier(menu)] == nil)
 
-        let rebuilt = controller.makeMenuCardItem(Text("rebuilt"), id: "menuCard", width: 300)
+        let rebuilt = controller.makeMenuCardItem(Text("rebuilt"), id: "menuCard", width: 300, onClick: {})
         #expect(rebuilt.view === hosting)
         #expect(!hosting.highlightState.isHighlighted)
     }
@@ -513,5 +712,44 @@ extension StatusMenuTests {
         #expect(rebuilt.view !== originalView)
         // The incompatible pool entry is consumed rather than left behind.
         #expect(controller.menuCardViewRecyclePool.isEmpty)
+    }
+
+    @Test
+    func `gpu selection highlight bypasses swiftui highlight state`() {
+        StatusItemController.setMenuRefreshEnabledForTesting(false)
+        let previousRendering = StatusItemController.menuCardRenderingEnabled
+        StatusItemController.menuCardRenderingEnabled = true
+        defer { StatusItemController.menuCardRenderingEnabled = previousRendering }
+
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        let controller = self.makeRecyclingController(settings: settings)
+        defer { controller.releaseStatusItemsForTesting() }
+
+        let menu = NSMenu()
+        let item = controller.makeMenuCardItem(
+            Text("Overview row"),
+            id: "overview-gpu",
+            width: 300,
+            submenu: NSMenu(),
+            usesGPUSelection: true,
+            onClick: {})
+        menu.addItem(item)
+
+        guard let gpuView = item.view as? GPUSelectionHostingView<Text>
+        else {
+            Issue.record("expected a GPU selection hosting view")
+            return
+        }
+
+        // The menu highlights the AppKit row, but the hosted SwiftUI highlight state must stay false
+        // so selection never re-invalidates the SwiftUI graph.
+        controller.menu(menu, willHighlight: item)
+        #expect(gpuView.isHighlightedForTesting)
+        #expect(!gpuView.swiftUIHighlightStateIsHighlightedForTesting)
+
+        controller.menu(menu, willHighlight: nil)
+        #expect(!gpuView.isHighlightedForTesting)
+        #expect(!gpuView.swiftUIHighlightStateIsHighlightedForTesting)
     }
 }

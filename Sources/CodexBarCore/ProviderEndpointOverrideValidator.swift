@@ -1,6 +1,6 @@
 import Foundation
 
-enum ProviderEndpointOverrideError: LocalizedError, Sendable, Equatable {
+enum ProviderEndpointOverrideError: LocalizedError, Equatable {
     case minimax(String)
     case alibabaCodingPlan(String)
 
@@ -19,8 +19,8 @@ enum ProviderEndpointOverrideError: LocalizedError, Sendable, Equatable {
     }
 }
 
-struct ProviderEndpointOverrideValidator: Sendable {
-    enum HostPolicy: Sendable {
+struct ProviderEndpointOverrideValidator {
+    enum HostPolicy {
         case allowAnyHTTPSHost
         case providerOwnedOnly
     }
@@ -45,6 +45,20 @@ struct ProviderEndpointOverrideValidator: Sendable {
         guard let raw,
               let url = self.url(from: raw),
               self.validatedDecodedHost(for: url, policy: policy) != nil
+        else { return nil }
+        return url
+    }
+
+    func validatedURLAllowingLoopbackHTTP(_ raw: String?) -> URL? {
+        guard let raw,
+              Self.hasExplicitURLScheme(raw),
+              let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              url.user == nil,
+              url.password == nil,
+              let host = self.validatedDecodedHost(for: url, policy: .allowAnyHTTPSHost),
+              scheme == "https" || Self.isLoopbackHost(host)
         else { return nil }
         return url
     }
@@ -94,6 +108,16 @@ struct ProviderEndpointOverrideValidator: Sendable {
         let scheme = raw[..<colonIndex]
         guard let first = scheme.first, first.isLetter else { return false }
         return scheme.dropFirst().allSatisfy { $0.isLetter || $0.isNumber || ["+", "-", "."].contains($0) }
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        if host == "localhost" || host == "::1" { return true }
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4,
+              let first = UInt8(octets[0]),
+              octets.dropFirst().allSatisfy({ UInt8($0) != nil })
+        else { return false }
+        return first == 127
     }
 
     private func hostAuthority(host: String, port: Int?) -> String {
